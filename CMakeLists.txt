@@ -44,12 +44,15 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user sources here
+    ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/lfs_port.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/thirdparty/littlefs-master/lfs.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/thirdparty/littlefs-master/lfs_util.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/thirdparty/littlefs-master
 )
 
 # Add project symbols (macros)
