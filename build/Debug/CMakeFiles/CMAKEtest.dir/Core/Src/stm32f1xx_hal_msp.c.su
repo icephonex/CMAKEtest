@@ -1,0 +1,3 @@
+C:/Users/lancable/Desktop/vscode-cmake/vscode-cmake-test/CMAKEtest/Core/Src/stm32f1xx_hal_msp.c:62:6:HAL_MspInit	24	static
+C:/Users/lancable/Desktop/vscode-cmake/vscode-cmake-test/CMAKEtest/Core/Src/stm32f1xx_hal_msp.c:89:6:HAL_SPI_MspInit	40	static
+C:/Users/lancable/Desktop/vscode-cmake/vscode-cmake-test/CMAKEtest/Core/Src/stm32f1xx_hal_msp.c:130:6:HAL_SPI_MspDeInit	16	static
