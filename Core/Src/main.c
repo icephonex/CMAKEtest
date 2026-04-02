@@ -299,7 +299,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /* 配置 GPIO 引脚输出电平 */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
   /* 配置 GPIO 引脚：PB12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;

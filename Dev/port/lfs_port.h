@@ -20,9 +20,8 @@ lfs_t *lfs_port_fs(void);
 const struct lfs_config *lfs_port_cfg(void);
 
 /*
- * These hooks are expected to be provided by the board's W25Qxx driver.
- * Weak defaults live in lfs_port.c so the project can link before the
- * concrete flash driver is added.
+ * littlefs 端口层统一通过 spi_flash 访问 W25Q64。
+ * 这些接口保留给 lfs_port.c 内部实现与 littlefs 桥接使用。
  */
 int lfs_port_flash_init(void);
 int lfs_port_flash_read(uint32_t address, void *buffer, uint32_t size);

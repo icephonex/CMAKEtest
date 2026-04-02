@@ -3,11 +3,8 @@
 #include <stdbool.h>
 #include <string.h>
 
-#if defined(__GNUC__)
-#define LFS_PORT_WEAK __attribute__((weak))
-#else
-#define LFS_PORT_WEAK
-#endif
+#include "main.h"
+#include "spi_flash.h"
 
 static int lfs_port_bd_read(const struct lfs_config *c, lfs_block_t block,
         lfs_off_t off, void *buffer, lfs_size_t size);
@@ -29,6 +26,8 @@ static uint8_t s_lfs_lookahead_buffer[LFS_PORT_LOOKAHEAD_SIZE];
 static lfs_t s_lfs;
 static bool s_lfs_flash_ready;
 static bool s_lfs_mounted;
+
+extern SPI_HandleTypeDef hspi2;
 
 static struct lfs_config s_lfs_cfg = {
     .context = NULL,
@@ -54,37 +53,29 @@ static struct lfs_config s_lfs_cfg = {
     .inline_max = 0,
 };
 
-LFS_PORT_WEAK int lfs_port_flash_init(void)
+int lfs_port_flash_init(void)
 {
-    return -1;
+    return spi_flash_init(&hspi2);
 }
 
-LFS_PORT_WEAK int lfs_port_flash_read(uint32_t address, void *buffer, uint32_t size)
+int lfs_port_flash_read(uint32_t address, void *buffer, uint32_t size)
 {
-    (void)address;
-    (void)buffer;
-    (void)size;
-    return -1;
+    return spi_flash_read(address, buffer, size);
 }
 
-LFS_PORT_WEAK int lfs_port_flash_prog(uint32_t address, const void *buffer, uint32_t size)
+int lfs_port_flash_prog(uint32_t address, const void *buffer, uint32_t size)
 {
-    (void)address;
-    (void)buffer;
-    (void)size;
-    return -1;
+    return spi_flash_program(address, buffer, size);
 }
 
-LFS_PORT_WEAK int lfs_port_flash_erase(uint32_t address, uint32_t size)
+int lfs_port_flash_erase(uint32_t address, uint32_t size)
 {
-    (void)address;
-    (void)size;
-    return -1;
+    return spi_flash_erase(address, size);
 }
 
-LFS_PORT_WEAK int lfs_port_flash_sync(void)
+int lfs_port_flash_sync(void)
 {
-    return 0;
+    return spi_flash_sync();
 }
 
 int lfs_port_init(void)
