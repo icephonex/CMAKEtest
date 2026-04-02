@@ -22,6 +22,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "at_server.h"
+#include "at_server_port.h"
 
 /* USER CODE END Includes */
 
@@ -47,7 +49,7 @@ UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
 
-osThreadId defaultTaskHandle;
+osThreadId task_loopHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -58,7 +60,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART1_UART_Init(void);
-void StartDefaultTask(void const * argument);
+void task_loop(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -102,6 +104,11 @@ int main(void)
   MX_SPI2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  AT_Server_Port_Init(&huart1);
+  if (AT_Server_Init(AT_Server_Port_GetConfig()) != 0)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END 2 */
 
@@ -122,9 +129,9 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* definition and creation of task_loop */
+  osThreadDef(task_loop, task_loop, osPriorityNormal, 0, 256);
+  task_loopHandle = osThreadCreate(osThread(task_loop), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -310,19 +317,21 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_task_loop */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the task_loop thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
+/* USER CODE END Header_task_loop */
+void task_loop(void const * argument)
 {
   /* USER CODE BEGIN 5 */
+  (void)argument;
   /* Infinite loop */
   for(;;)
   {
+    AT_Server_Poll();
     osDelay(1);
   }
   /* USER CODE END 5 */
