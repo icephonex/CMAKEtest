@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/Users/lancable/Desktop/vscode-cmake/vscode-cmake-test/CMAKEtest/build/Debug/cmake_install.cmake",
-		"C:/Users/lancable/Desktop/vscode-cmake/vscode-cmake-test/CMAKEtest/build/Debug/cmake/stm32cubemx/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
