@@ -1,242 +1,264 @@
-# Minimal AT Server Design
+# 最小化 AT Server 设计
 
-**Date:** 2026-04-02
+**日期：** 2026-04-02
 
-## Goal
+## 目标
 
-Add a minimal AT command path on top of the existing STM32 + FreeRTOS + UART DMA project so the firmware can:
+在现有 STM32 + FreeRTOS + UART DMA 工程基础上，增加一条最小可用的 AT 命令链路，使固件能够：
 
-- receive UART bytes by DMA
-- move received bytes into an `lwrb` ring buffer on UART idle interrupt
-- poll and parse commands from a FreeRTOS task named `task_loop`
-- recognize the complete command `AT\r\n`
-- reply with `OK\r\n` for `AT\r\n`
-- reply with `ERROR\r\n` for any other complete command
+- 通过 DMA 接收串口字节流
+- 在串口空闲中断中，将收到的数据写入 `lwrb` 环形缓冲区
+- 在 FreeRTOS 任务 `task_loop` 中轮询并解析命令
+- 识别完整命令 `AT\r\n`
+- 对 `AT\r\n` 回复 `OK\r\n`
+- 对其他完整命令回复 `ERROR\r\n`
 
-This first step is only meant to validate the full receive -> buffer -> parse -> respond path.
+这一阶段只用于验证完整的数据路径：接收 -> 缓冲 -> 解析 -> 应答。
 
-## Scope
+## 范围
 
-This change covers:
+本次变更包含：
 
-- a generic AT protocol engine
-- a project-specific AT port layer
-- UART DMA idle reception handoff into `lwrb`
-- a polling FreeRTOS task in `main.c`
-- minimal command handling for `AT`
+- 一个通用的 AT 协议引擎
+- 一个项目适配层 `at_server_port`
+- 基于 UART DMA 空闲中断的数据搬运
+- 在 `main.c` 中创建的轮询型 FreeRTOS 任务
+- 针对 `AT` 的最小命令处理
 
-This change does not cover:
+本次变更不包含：
 
-- a full `AT+XXX` command table
-- event-driven task wakeup
-- multi-UART AT services
-- persistent configuration changes
-- business features such as MAC, MODE, REBOOT, NFC, EVC, display, or relay control
+- 完整的 `AT+XXX` 命令表
+- 中断通知任务的事件驱动机制
+- 多串口 AT 服务
+- 持久化配置写入
+- MAC、MODE、REBOOT、NFC、EVC、屏幕、继电器等业务功能
 
-## Confirmed Decisions
+## 已确认约束
 
-1. A command is complete only when it ends with `\r\n`.
-2. Split packets must be supported. For example, `AT` followed later by `\r\n` must still be recognized as one valid command.
-3. Unknown complete commands must return `ERROR\r\n`.
-4. The parsing task uses simple polling rather than interrupt-to-task notification.
-5. The FreeRTOS task is created in `Core/Src/main.c` and named `task_loop`.
-6. The AT protocol layer and the project business layer must remain separate.
+1. 一条命令只有以 `\r\n` 结尾时才算完整。
+2. 必须支持拆包场景，例如先收到 `AT`，后续再收到 `\r\n`，也要识别为同一条有效命令。
+3. 未知的完整命令统一返回 `ERROR\r\n`。
+4. 解析任务采用简单轮询方式，不使用中断唤醒任务。
+5. FreeRTOS 任务在 `Core/Src/main.c` 中创建，任务名为 `task_loop`。
+6. AT 协议层与项目业务层必须严格分离。
 
-## Architecture
+## 总体架构
 
-The design is split into four layers:
+设计分为四层：
 
-1. UART DMA + interrupt handoff
-   DMA receives bytes into a temporary UART RX buffer. When USART idle is detected, the interrupt layer determines how many bytes arrived and forwards that byte block to the AT engine input path.
+1. UART DMA + 中断搬运层  
+   DMA 将字节流写入串口接收内存缓冲区。检测到 USART 空闲中断后，中断层计算本次收到的字节数，并将这一段字节块交给 AT 引擎输入接口。
 
-2. Generic AT engine
-   `at_server.c` and `at_server.h` implement byte buffering, line assembly, session state, AT syntax recognition, command dispatch, and unified response formatting.
+2. 通用 AT 引擎层  
+   `at_server.c` 和 `at_server.h` 负责字节缓冲、按行组帧、会话状态维护、AT 语法识别、命令分发以及统一响应格式封装。
 
-3. Project port layer
-   `at_server_port.c` and `at_server_port.h` adapt the generic engine to this firmware project by providing output hooks, compile-time configuration, and command-specific business handling.
+3. 项目适配层  
+   `at_server_port.c` 和 `at_server_port.h` 负责将通用 AT 引擎接入当前项目，包括输出接口、配置项和后续项目命令的业务处理。
 
-4. FreeRTOS polling task
-   `task_loop` repeatedly calls the AT engine poll function. Parsing and response generation happen in task context, not in interrupt context.
+4. FreeRTOS 轮询任务层  
+   `task_loop` 周期性调用 AT 引擎轮询函数。协议解析和应答生成都发生在任务上下文中，而不是中断上下文中。
 
-This keeps the interrupt path short, keeps protocol parsing centralized, and leaves project-specific behavior outside the generic parser.
+这样的分层可以保证：
 
-## File Responsibilities
+- 中断路径足够短，只做搬运
+- 协议逻辑集中在 `at_server`
+- 项目业务逻辑留在 `at_server_port`
+
+## 文件职责
 
 ### `unilib/src/at_server.h`
 
-Declare the generic AT engine API, including:
+声明通用 AT 引擎接口，包括：
 
-- initialization
-- byte-input API used by the UART handoff
-- polling API used by `task_loop`
-- request and response data types shared with the port layer
+- 初始化接口
+- 供 UART 搬运层调用的字节输入接口
+- 供 `task_loop` 调用的轮询接口
+- 与端口层共享的请求/响应数据类型
 
-This header defines how the project uses the AT engine without exposing business logic.
+该头文件只定义“如何使用 AT 引擎”，不暴露具体业务逻辑。
 
 ### `unilib/src/at_server.c`
 
-Implement the generic AT engine. Its responsibilities are:
+实现通用 AT 引擎，职责包括：
 
-- receive byte streams and cache them in `lwrb`
-- detect complete commands terminated by `\r\n`
-- maintain line assembly state across split packets
-- parse protocol shape
-- distinguish basic forms such as `AT`, `AT+NAME`, `AT+NAME?`, and `AT+NAME=...`
-- dispatch non-built-in commands to the port layer
-- emit unified responses such as `OK\r\n`, `ERROR\r\n`, and header/data style responses
+- 接收字节流并写入 `lwrb`
+- 识别以 `\r\n` 结束的完整命令
+- 在拆包场景下持续维护当前行缓冲状态
+- 解析协议格式
+- 区分 `AT`、`AT+NAME`、`AT+NAME?`、`AT+NAME=...` 等基础形态
+- 将非内建命令分发给端口层
+- 统一输出 `OK\r\n`、`ERROR\r\n`、`+HEAD:data\r\nOK\r\n` 等协议响应
 
-It must not know what any project command actually does.
+它不负责任何项目业务含义，不知道 MAC、MODE、REBOOT 等命令具体做什么。
 
 ### `Dev/port/at_server_port.h`
 
-Declare the project-specific adaptation layer, including:
+声明项目适配层接口，包括：
 
-- project configuration values for the AT engine
-- send/output hooks
-- the command handling interface used by `at_server`
+- AT 引擎所需的项目配置
+- 底层发送输出接口
+- 供 `at_server` 调用的命令处理入口
 
-This header is the contract between the generic engine and the firmware project.
+这个头文件定义了通用 AT 引擎与当前固件工程之间的契约。
 
 ### `Dev/port/at_server_port.c`
 
-Implement the project adaptation layer. Its responsibilities are:
+实现项目适配层，职责包括：
 
-- provide project configuration to the generic AT engine
-- provide the concrete UART send path
-- implement business handling for project commands
-- read and write project state when later `AT+XXX` commands are added
+- 向通用 AT 引擎提供项目配置
+- 提供实际串口发送出口
+- 实现项目命令的业务处理逻辑
+- 后续在命令处理函数中读写项目状态
 
-It must not assemble commands from raw bytes and must not own `\r\n` detection logic.
+它不负责按字节拼包，不负责识别 `\r\n`，也不负责会话状态管理。
 
 ### `Core/Src/main.c`
 
-Own system integration for this feature:
+负责系统接线：
 
-- call the AT engine initialization after USART1 is initialized
-- create the FreeRTOS task named `task_loop`
-- run `AT_Server_Poll()` from inside the `task_loop` loop
+- USART1 初始化完成后调用 AT 引擎初始化
+- 创建 FreeRTOS 任务 `task_loop`
+- 在 `task_loop` 循环中调用 `AT_Server_Poll()`
 
 ### `Core/Src/stm32f1xx_it.c`
 
-Own only interrupt-level reception handoff:
+只负责中断侧的数据搬运：
 
-- detect USART1 idle
-- calculate received DMA length
-- pass the received byte block into the AT engine input API
-- restart DMA reception
+- 检测 USART1 空闲中断
+- 计算 DMA 本次接收到的有效长度
+- 将收到的字节块交给 AT 引擎输入接口
+- 重启 DMA 接收
 
-It must not parse commands and must not execute command business logic.
+它不负责命令解析，也不负责任何业务处理。
 
 ### `CMakeLists.txt`
 
-Add the new AT sources and the third-party ring buffer source to the build:
+需要将以下源文件加入构建：
 
 - `unilib/src/at_server.c`
 - `Dev/port/at_server_port.c`
 - `unilib/thirdparty/lwrb-develop/lwrb.c`
 
-Add the required include directories for:
+并增加以下头文件搜索路径：
 
 - `unilib/src`
 - `Dev/port`
 - `unilib/thirdparty/lwrb-develop`
 
-## Data Flow
+## 数据流
 
-1. The host sends bytes over USART1.
-2. DMA stores the bytes in a UART RX memory buffer.
-3. USART1 idle interrupt fires when a receive gap appears.
-4. The interrupt handler determines the valid byte count from the DMA state.
-5. The byte block is handed to the generic AT engine input function.
-6. The AT engine writes the bytes into the `lwrb` ring buffer.
-7. `task_loop` periodically calls `AT_Server_Poll()`.
-8. `AT_Server_Poll()` reads bytes from `lwrb` and appends them to the current line buffer.
-9. When `\r\n` is detected, the current line is considered one complete command.
-10. If the command is exactly `AT`, the engine sends `OK\r\n`.
-11. If the command is anything else in this minimal version, the engine sends `ERROR\r\n`.
-12. The line buffer is reset so the next command can be assembled.
+1. 上位机通过 USART1 发送字节流。
+2. DMA 将字节写入 UART 接收内存缓冲区。
+3. 当串口出现空闲间隙时，触发 USART1 空闲中断。
+4. 中断处理函数根据 DMA 状态计算本次收到的有效字节数。
+5. 这一段字节块被交给通用 AT 引擎的输入接口。
+6. AT 引擎将这些字节写入 `lwrb` 环形缓冲区。
+7. `task_loop` 周期性调用 `AT_Server_Poll()`。
+8. `AT_Server_Poll()` 从 `lwrb` 读取字节，并追加到当前命令行缓冲区。
+9. 当检测到 `\r\n` 时，认为一条完整命令结束。
+10. 如果完整命令正好是 `AT`，引擎发送 `OK\r\n`。
+11. 如果完整命令是其他内容，则发送 `ERROR\r\n`。
+12. 当前行缓冲区复位，准备组装下一条命令。
 
-Because the line buffer persists across poll iterations, a command split across multiple DMA idle events is still reassembled correctly.
+由于当前命令行缓冲区会跨多次轮询保留状态，所以拆包命令仍然能够被正确拼接。
 
-## Protocol Rules
+## 协议规则
 
-The generic engine owns protocol recognition.
+通用 AT 引擎独占协议识别逻辑。
 
-For this minimal version:
+本次最小版本遵循以下规则：
 
-- empty partial input does not produce any response
-- `AT\r\n` returns `OK\r\n`
-- any other complete line returns `ERROR\r\n`
-- command completion depends only on `\r\n`
-- `AT` without `\r\n` is incomplete and must wait
+- 空的部分输入不产生任何响应
+- `AT\r\n` 返回 `OK\r\n`
+- 其他完整命令返回 `ERROR\r\n`
+- 命令完成条件只认 `\r\n`
+- 收到 `AT` 但还没有收到 `\r\n` 时，继续等待后续字节
+- 如果收到 `\n` 时前面没有待匹配的 `\r`，立即丢弃当前部分命令
+- 如果收到 `\r` 后，下一个字节不是 `\n`，立即丢弃当前部分命令
+- 因非法 `\r` 序列而丢弃当前部分命令后，从当前这个非 `\n` 字节重新开始作为新的候选命令起点
+- 因孤立 `\n` 而丢弃当前部分命令后，从后续字节继续尝试新的候选命令
+- 如果重新同步后的候选命令始终没有形成合法的 `\r\n` 结束格式，则不产生响应，直到将来形成新的完整命令
+- 如果形成了完整的 `\r\n` 结尾命令，但内容不符合当前支持的 AT 格式，则返回 `ERROR\r\n`
 
-The engine should already be shaped so later work can extend the parser to:
+这样可以保证：
+
+- `AT\rAT\r\n` 会丢弃前一个无效片段 `AT\r`
+- 从新的 `AT` 开始重新同步
+- 当第二个 `AT\r\n` 完整出现时，正确返回 `OK\r\n`
+
+后续扩展时，引擎应保留对以下格式的演进空间：
 
 - `AT+NAME`
 - `AT+NAME?`
 - `AT+NAME=VALUE`
 
-That future extensibility must not complicate the minimal implementation beyond what is needed for a clean interface.
+但这种可扩展性不能让当前最小实现过度复杂。
 
-## Session State
+## 会话状态
 
-The generic engine keeps the following state:
+通用 AT 引擎内部维护以下状态：
 
-- ring buffer instance and backing storage
-- current line assembly buffer
-- current assembled line length
-- optional parser markers needed to classify a complete command
-- UART output target or output callback references required by the port layer
+- `lwrb` 实例及其底层存储区
+- 当前命令行缓冲区
+- 当前已组装的命令长度
+- 一个 `pending_cr` 标志，用于区分合法的 `\r\n` 结尾和非法的孤立 `\r`
+- 后续分类命令形态时需要的解析标记
+- 与端口层发送接口相关的引用或回调
 
-Only the generic engine owns partial-line state. The port layer only receives complete parsed requests.
+只有通用 AT 引擎拥有部分命令的会话状态。端口层只能收到已经完成解析的完整请求。
 
-## Error Handling
+## 异常处理
 
-### UART / DMA handoff
+### UART / DMA 搬运
 
-- If idle interrupt fires with zero received bytes, restart DMA reception and do nothing else.
-- If byte insertion into `lwrb` cannot store the full byte block, drop the excess bytes and invalidate the current line assembly state so a corrupted partial command is not later accepted.
-- DMA reception must always be restarted after the idle event is handled.
+- 如果空闲中断触发时本次收到的字节数为 0，则直接重启 DMA 接收，不做其他处理。
+- 如果写入 `lwrb` 时空间不足，无法完整写入整段字节，则丢弃超出的部分，并使当前组帧状态失效，避免后续把损坏的半条命令误识别为有效命令。
+- 无论这次是否有效，都必须确保 DMA 接收被重新启动。
 
-### Parser behavior
+### 解析器行为
 
-- If the line buffer overflows before a `\r\n` terminator is completed, discard the current line and return `ERROR\r\n` once the line is closed.
-- If the completed command is not recognized in this minimal version, return `ERROR\r\n`.
-- If the engine receives fragmented input, it must keep waiting until a complete `\r\n` terminated line is available.
+- 如果在收到完整 `\r\n` 之前，当前命令行长度已经超过上限，则丢弃当前行，并在该行最终闭合时返回 `ERROR\r\n`。
+- 如果一条完整命令在当前最小版本中无法识别，则返回 `ERROR\r\n`。
+- 如果输入是拆包形式，只要还没有形成完整 `\r\n`，就持续等待。
+- 如果 `\n` 到达时没有待匹配的 `\r`，则立即丢弃当前部分命令，并清空解析状态，防止错误的分隔顺序被误识别成合法命令。
+- 如果 `\r` 后面跟着的不是 `\n`，则立即丢弃当前部分命令，清除 `pending_cr` 状态，并把当前这个新字节当作下一条候选命令的起点。
+- 如果重新同步后的候选命令最终也没有形成合法 `\r\n` 结束格式，则继续丢弃，不产生伪响应。
 
-### Layering rules
+### 分层约束
 
-- `at_server` decides whether a command is complete, valid, and dispatchable.
-- `at_server_port` decides what project-specific commands do.
-- interrupt handlers move bytes only; they do not interpret command meaning.
+- `at_server` 负责决定一条命令是否完整、是否合法、是否可以分发。
+- `at_server_port` 只负责项目命令的具体业务含义。
+- 中断处理函数只搬运字节，不解释协议含义。
 
-## Minimal Command Behavior
+## 最小命令行为
 
-The minimum supported behavior for this design is:
+本阶段最小支持内容为：
 
-1. Recognize the bare command `AT`.
-2. Handle bare `AT` inside the generic engine as a built-in base command.
-3. Reserve port-layer dispatch for future `AT+XXX` commands.
+1. 识别裸命令 `AT`
+2. 将裸 `AT` 作为 `at_server` 内建基础命令直接处理
+3. 为未来 `AT+XXX` 命令保留端口层分发入口
 
-This keeps the first implementation small while preserving the intended architecture.
+这样既保证了第一阶段实现足够小，也不会破坏后续扩展架构。
 
-## Verification
+## 验收标准
 
-Success criteria for this change:
+本次变更完成后，应满足以下验收条件：
 
-1. The project builds with the new AT engine, port layer, and `lwrb` source linked.
-2. `main.c` creates a FreeRTOS task named `task_loop`.
-3. `task_loop` repeatedly calls `AT_Server_Poll()`.
-4. Sending `AT\r\n` over USART1 returns `OK\r\n`.
-5. Sending `AT` and later `\r\n` still returns `OK\r\n`.
-6. Sending `ATX\r\n` returns `ERROR\r\n`.
-7. Sending multiple commands back-to-back such as `AT\r\nATX\r\nAT\r\n` returns `OK\r\nERROR\r\nOK\r\n` in order.
-8. Sending `AT` without `\r\n` produces no premature response.
-9. Sending an overlong line does not crash the firmware and results in the current line being discarded with `ERROR\r\n`.
+1. 工程能够正确编译，并链接新的 AT 引擎、端口层和 `lwrb`。
+2. `main.c` 创建了名为 `task_loop` 的 FreeRTOS 任务。
+3. `task_loop` 在循环中持续调用 `AT_Server_Poll()`。
+4. 向 USART1 发送 `AT\r\n` 时，返回 `OK\r\n`。
+5. 先发送 `AT`，后续再发送 `\r\n` 时，仍然返回 `OK\r\n`。
+6. 发送 `ATX\r\n` 时，返回 `ERROR\r\n`。
+7. 连续发送 `AT\r\nATX\r\nAT\r\n` 时，按顺序返回 `OK\r\nERROR\r\nOK\r\n`。
+8. 只发送 `AT` 而不发送 `\r\n` 时，不得提前返回响应。
+9. 发送超长命令时，系统不能死机，当前行会被丢弃，并在闭合后返回 `ERROR\r\n`。
+10. 发送 `AT\rAT\r\n` 时，应丢弃前一个无效片段 `AT\r`，从第二个 `AT` 重新同步，并最终返回 `OK\r\n`。
+11. 发送 `AT\n\r`、`AT\n`、`AT\rAT`、`AT`、`AT\n\rAT\nAT\rAT` 等错误分隔顺序时，不得误返回 `OK\r\n`。
 
-## Implementation Notes
+## 实现说明
 
-- The first implementation should stay minimal and readable.
-- Parsing must happen in task context.
-- The interrupt path should avoid string parsing and business branching.
-- The design should leave room for future `AT+XXX` command dispatch without requiring a rewrite of the byte assembly path.
+- 第一阶段实现应尽量保持最小、直接、易读。
+- 协议解析必须发生在任务上下文中。
+- 中断路径应避免字符串解析和业务分支。
+- 设计需要为未来 `AT+XXX` 命令扩展保留空间，但不能因此重写当前的字节组帧路径。
