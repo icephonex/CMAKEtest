@@ -222,6 +222,7 @@ void USART1_IRQHandler(void)
   if ((__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE) != RESET) &&
       (__HAL_UART_GET_IT_SOURCE(&huart1, UART_IT_IDLE) != RESET))
   {
+    /* 串口进入空闲态，认为本批 DMA 数据接收完成，转交 AT 端口层处理 */
     __HAL_UART_CLEAR_IDLEFLAG(&huart1);
     AT_Server_Port_HandleIdleIrq(&huart1);
   }
