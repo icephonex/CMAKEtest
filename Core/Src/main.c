@@ -16,63 +16,66 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-/* 头文件 ------------------------------------------------------------------*/
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
 
-/* 私有头文件 ----------------------------------------------------------*/
+/* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "at_server.h"
 #include "at_server_port.h"
 
 /* USER CODE END Includes */
 
-/* 私有类型定义 -----------------------------------------------------------*/
+/* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
 
-/* 私有宏定义 ------------------------------------------------------------*/
+/* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
 /* USER CODE END PD */
 
-/* 私有宏 -------------------------------------------------------------*/
+/* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
 /* USER CODE END PM */
 
-/* 私有变量 ---------------------------------------------------------*/
+/* Private variables ---------------------------------------------------------*/
+CAN_HandleTypeDef hcan;
+
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
 
-osThreadId task_loopHandle;
+osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
 
-/* 私有函数声明 -------------------------------------------------------*/
+/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART1_UART_Init(void);
-void task_loop(void const * argument);
+static void MX_CAN_Init(void);
+void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
-/* 私有用户代码 ---------------------------------------------------------*/
+/* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
 
 /**
-  * @brief  应用程序入口
+  * @brief  The application entry point.
   * @retval int
   */
 int main(void)
@@ -82,27 +85,28 @@ int main(void)
 
   /* USER CODE END 1 */
 
-  /* MCU 配置--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-  /* 复位所有外设，初始化 Flash 接口和 SysTick。 */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
 
   /* USER CODE END Init */
 
-  /* 配置系统时钟 */
+  /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
 
-  /* 初始化所有已配置的外设 */
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_SPI2_Init();
   MX_USART1_UART_Init();
+  MX_CAN_Init();
   /* USER CODE BEGIN 2 */
   AT_Server_Port_Init(&huart1);
   if (AT_Server_Init(AT_Server_Port_GetConfig()) != 0)
@@ -128,21 +132,21 @@ int main(void)
   /* 可在此添加队列等 */
   /* USER CODE END RTOS_QUEUES */
 
-  /* 创建线程 */
-  /* 定义并创建 task_loop */
-  osThreadDef(task_loop, task_loop, osPriorityNormal, 0, 256);
-  task_loopHandle = osThreadCreate(osThread(task_loop), NULL);
+  /* Create the thread(s) */
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* 可在此添加其他线程等 */
   /* USER CODE END RTOS_THREADS */
 
-  /* 启动调度器 */
+  /* Start scheduler */
   osKernelStart();
 
-  /* 正常情况下不会执行到这里，控制权已交给调度器 */
+  /* We should never get here as control is now taken by the scheduler */
 
-  /* 死循环 */
+  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
@@ -154,7 +158,7 @@ int main(void)
 }
 
 /**
-  * @brief 系统时钟配置
+  * @brief System Clock Configuration
   * @retval None
   */
 void SystemClock_Config(void)
@@ -162,8 +166,8 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** 根据 RCC_OscInitTypeDef 结构体中指定的参数
-  * 初始化 RCC 振荡器。
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -177,7 +181,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  /** 初始化 CPU、AHB 和 APB 总线时钟
+  /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -193,7 +197,44 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief SPI2 初始化函数
+  * @brief CAN Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CAN_Init(void)
+{
+
+  /* USER CODE BEGIN CAN_Init 0 */
+
+  /* USER CODE END CAN_Init 0 */
+
+  /* USER CODE BEGIN CAN_Init 1 */
+
+  /* USER CODE END CAN_Init 1 */
+  hcan.Instance = CAN1;
+  hcan.Init.Prescaler = 16;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
+  hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_1TQ;
+  hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
+  hcan.Init.TimeTriggeredMode = DISABLE;
+  hcan.Init.AutoBusOff = DISABLE;
+  hcan.Init.AutoWakeUp = DISABLE;
+  hcan.Init.AutoRetransmission = DISABLE;
+  hcan.Init.ReceiveFifoLocked = DISABLE;
+  hcan.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CAN_Init 2 */
+
+  /* USER CODE END CAN_Init 2 */
+
+}
+
+/**
+  * @brief SPI2 Initialization Function
   * @param None
   * @retval None
   */
@@ -207,7 +248,7 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 1 */
 
   /* USER CODE END SPI2_Init 1 */
-  /* SPI2 参数配置 */
+  /* SPI2 parameter configuration*/
   hspi2.Instance = SPI2;
   hspi2.Init.Mode = SPI_MODE_MASTER;
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
@@ -231,7 +272,7 @@ static void MX_SPI2_Init(void)
 }
 
 /**
-  * @brief USART1 初始化函数
+  * @brief USART1 Initialization Function
   * @param None
   * @retval None
   */
@@ -264,26 +305,26 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
-  * @brief 使能 DMA 控制器时钟
+  * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
 {
 
-  /* 使能 DMA 控制器时钟 */
+  /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
 
-  /* DMA 中断初始化 */
-  /* DMA1_Channel4_IRQn 中断配置 */
+  /* DMA interrupt init */
+  /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-  /* DMA1_Channel5_IRQn 中断配置 */
+  /* DMA1_Channel5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 }
 
 /**
-  * @brief GPIO 初始化函数
+  * @brief GPIO Initialization Function
   * @param None
   * @retval None
   */
@@ -294,14 +335,14 @@ static void MX_GPIO_Init(void)
 
   /* USER CODE END MX_GPIO_Init_1 */
 
-  /* 使能 GPIO 端口时钟 */
+  /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /* 配置 GPIO 引脚输出电平 */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
 
-  /* 配置 GPIO 引脚：PB12 */
+  /*Configure GPIO pin : PB12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -317,14 +358,14 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_task_loop */
+/* USER CODE BEGIN Header_StartDefaultTask */
 /**
-  * @brief  task_loop 线程实现函数
-  * @param  argument: 未使用
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_task_loop */
-void task_loop(void const * argument)
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
   (void)argument;
@@ -339,7 +380,7 @@ void task_loop(void const * argument)
 }
 
 /**
-  * @brief  发生错误时执行此函数。
+  * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
 void Error_Handler(void)
@@ -354,9 +395,10 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  上报发生 assert_param 错误的源文件名和源代码行号。
-  * @param  file: 指向源文件名的指针
-  * @param  line: assert_param 出错的源码行号
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
