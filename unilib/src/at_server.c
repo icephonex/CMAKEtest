@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "app_text.h"
 #include "lwrb/lwrb.h"
 
 /* AT 协议引擎内部运行状态 */
@@ -49,28 +50,37 @@ static uint8_t AT_Server_IsNameChar(char ch)
 {
     return (uint8_t)((((ch >= 'A') && (ch <= 'Z')) || ((ch >= 'a') && (ch <= 'z')) ||
                       ((ch >= '0') && (ch <= '9')) || (ch == '_'))
-                         ? 1
-                         : 0);
+                         ? 1U
+                         : 0U);
+}
+
+/* 获取以 '\0' 结束字符串的长度 */
+static size_t AT_Server_StringLength(const char *text)
+{
+    size_t length = 0U;
+
+    if (text != NULL)
+    {
+        while (text[length] != '\0')
+        {
+            length++;
+        }
+    }
+
+    return length;
 }
 
 /* 通过端口层发送固定字符串响应 */
-static int AT_Server_WriteLiteral(const char *text)
+static APP_Status AT_Server_WriteLiteral(const char *text)
 {
-    size_t len;
+    const size_t len = AT_Server_StringLength(text);
 
-    if ((text == NULL) || (s_at_server.config.write == NULL))
+    if ((text == NULL) || (s_at_server.config.write == NULL) || (len == 0U))
     {
-        return -1;
+        return APP_STATUS_INVALID_ARG;
     }
 
-    len = strlen(text);
-    if ((len == 0U) ||
-        (s_at_server.config.write((const uint8_t *)text, len, s_at_server.config.write_context) != 0))
-    {
-        return -1;
-    }
-
-    return 0;
+    return s_at_server.config.write((const uint8_t *)text, len, s_at_server.config.write_context);
 }
 
 /* 超时仍未收完整的 AT 命令直接丢弃，避免旧半包影响后续新命令 */
@@ -110,17 +120,17 @@ static void AT_Server_AppendByte(uint8_t ch)
     s_at_server.config.line_buffer[s_at_server.line_length] = '\0';
 }
 
-int AT_Server_WriteOk(void)
+APP_Status AT_Server_WriteOk(void)
 {
     return AT_Server_WriteLiteral("OK\r\n");
 }
 
-int AT_Server_WriteError(void)
+APP_Status AT_Server_WriteError(void)
 {
     return AT_Server_WriteLiteral("ERROR\r\n");
 }
 
-int AT_Server_WriteHeadData(const char *head, const char *data)
+APP_Status AT_Server_WriteHeadData(const char *head, const char *data)
 {
     if (head == NULL)
     {
@@ -130,21 +140,21 @@ int AT_Server_WriteHeadData(const char *head, const char *data)
     {
         data = "";
     }
-    if (AT_Server_WriteLiteral("+") != 0)
+    if (AT_Server_WriteLiteral("+") != APP_STATUS_OK)
     {
-        return -1;
+        return APP_STATUS_IO;
     }
-    if (AT_Server_WriteLiteral(head) != 0)
+    if (AT_Server_WriteLiteral(head) != APP_STATUS_OK)
     {
-        return -1;
+        return APP_STATUS_IO;
     }
-    if (AT_Server_WriteLiteral(":") != 0)
+    if (AT_Server_WriteLiteral(":") != APP_STATUS_OK)
     {
-        return -1;
+        return APP_STATUS_IO;
     }
-    if (AT_Server_WriteLiteral(data) != 0)
+    if (AT_Server_WriteLiteral(data) != APP_STATUS_OK)
     {
-        return -1;
+        return APP_STATUS_IO;
     }
     return AT_Server_WriteLiteral("\r\n");
 }
@@ -156,6 +166,8 @@ static void AT_Server_DispatchCompletedLine(void)
     char *line;
     char *cursor;
     AT_Server_HandlerResult result;
+    uint8_t matched = APP_FALSE;
+    APP_Status status;
 
     if (s_at_server.line_overflow != 0U)
     {
@@ -174,7 +186,8 @@ static void AT_Server_DispatchCompletedLine(void)
     line = s_at_server.config.line_buffer;
     line[s_at_server.line_length] = '\0';
 
-    if (strcmp(line, "AT") == 0)
+    status = APP_Text_EqualsLiteral(line, s_at_server.line_length, "AT", &matched);
+    if ((status == APP_STATUS_OK) && (matched != APP_FALSE))
     {
         /* 裸 AT 作为链路探活命令，直接回复 OK */
         (void)AT_Server_WriteOk();
@@ -182,7 +195,7 @@ static void AT_Server_DispatchCompletedLine(void)
         return;
     }
 
-    if (strncmp(line, "AT+", 3U) != 0)
+    if ((s_at_server.line_length < 3U) || (line[0] != 'A') || (line[1] != 'T') || (line[2] != '+'))
     {
         /* 非 "AT+" 前缀的完整行直接丢弃并回复错误 */
         (void)AT_Server_WriteError();
@@ -231,7 +244,7 @@ static void AT_Server_DispatchCompletedLine(void)
         request.type = AT_SERVER_COMMAND_TYPE_SETUP;
         *cursor = '\0';
         request.args = cursor + 1;
-        request.args_len = strlen(request.args);
+        request.args_len = AT_Server_StringLength(request.args);
     }
     else
     {
@@ -309,25 +322,25 @@ static void AT_Server_ProcessByte(uint8_t ch)
     }
 }
 
-int AT_Server_Init(const AT_Server_Config *config)
+APP_Status AT_Server_Init(const AT_Server_Config *config)
 {
     if ((config == NULL) || (config->ring_buffer_storage == NULL) || (config->ring_buffer_size == 0U) ||
         (config->line_buffer == NULL) || (config->line_buffer_size < 2U) || (config->write == NULL))
     {
-        return -1;
+        return APP_STATUS_INVALID_ARG;
     }
 
     memset(&s_at_server, 0, sizeof(s_at_server));
     s_at_server.config = *config;
     if (lwrb_init(&s_at_server.ring_buffer, config->ring_buffer_storage, config->ring_buffer_size) == 0U)
     {
-        return -1;
+        return APP_STATUS_IO;
     }
 
     /* 初始化后进入空闲状态，等待外部送入串口字节流 */
     s_at_server.ready = 1U;
     AT_Server_ClearLine();
-    return 0;
+    return APP_STATUS_OK;
 }
 
 size_t AT_Server_InputBytes(const uint8_t *data, size_t len)

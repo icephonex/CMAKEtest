@@ -5,12 +5,23 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
+#include "app_base.h"
+
+/**
+ * @brief FOC 控制输出模式。
+ */
+typedef enum
+{
+    FOC_CONTROL_MODE_STOP = 0,
+    FOC_CONTROL_MODE_OPENLOOP = 1,
+    FOC_CONTROL_MODE_STATIC_VECTOR = 2
+} FOC_ControlMode;
 
 /**
  * @brief 初始化开环控制状态和默认参数。
+ * @retval APP_STATUS_OK 表示初始化成功。
  */
-void FOC_OpenLoop_Init(void);
+APP_Status FOC_OpenLoop_Init(void);
 
 /**
  * @brief FreeRTOS 开环控制任务入口，负责周期推进电角度并刷新 PWM。
@@ -20,45 +31,64 @@ void FOC_OpenLoop_Task(void const *argument);
 
 /**
  * @brief 请求启动开环转动任务。
+ * @retval APP_STATUS_OK 表示请求成功。
  */
-void FOC_OpenLoop_RequestStart(void);
+APP_Status FOC_OpenLoop_RequestStart(void);
 
 /**
  * @brief 请求停止开环转动任务，并关闭 PWM 输出。
+ * @retval APP_STATUS_OK 表示请求成功。
  */
-void FOC_OpenLoop_RequestStop(void);
+APP_Status FOC_OpenLoop_RequestStop(void);
 
 /**
- * @brief 设置开环电频，单位 Hz。
- * @param frequency_hz 目标电频。
+ * @brief 设置开环电频，单位 mHz。
+ * @param frequency_millihz 目标电频。
+ * @retval APP_STATUS_OK 表示设置成功。
+ * @retval APP_STATUS_RANGE 表示超出允许范围。
  */
-void FOC_OpenLoop_SetFrequencyHz(float frequency_hz);
+APP_Status FOC_OpenLoop_SetFrequencyMilliHz(uint32_t frequency_millihz);
 
 /**
- * @brief 设置开环 dq 电压请求。
- * @param vd d 轴电压。
- * @param vq q 轴电压。
+ * @brief 设置开环 dq 电压请求，单位千分比。
+ * @param vd_permille d 轴电压千分比。
+ * @param vq_permille q 轴电压千分比。
+ * @retval APP_STATUS_OK 表示设置成功。
+ * @retval APP_STATUS_RANGE 表示超出允许范围。
  */
-void FOC_OpenLoop_SetVoltageDQ(float vd, float vq);
+APP_Status FOC_OpenLoop_SetVoltageDQPermille(int32_t vd_permille, int32_t vq_permille);
 
 /**
- * @brief 获取当前开环电频，单位 Hz。
- * @return 当前目标电频。
+ * @brief 设置静态 alpha-beta 电压矢量请求，单位千分比。
+ * @param alpha_permille alpha 轴电压千分比。
+ * @param beta_permille beta 轴电压千分比。
+ * @retval APP_STATUS_OK 表示设置成功。
+ * @retval APP_STATUS_RANGE 表示超出允许范围。
  */
-float FOC_OpenLoop_GetFrequencyHz(void);
+APP_Status FOC_OpenLoop_SetStaticVectorPermille(int32_t alpha_permille, int32_t beta_permille);
+
+/**
+ * @brief 获取当前开环电频，单位 mHz。
+ * @param frequency_millihz 输出的目标电频。
+ * @retval APP_STATUS_OK 表示读取成功。
+ * @retval APP_STATUS_INVALID_ARG 表示输出指针无效。
+ */
+APP_Status FOC_OpenLoop_GetFrequencyMilliHz(uint32_t *frequency_millihz);
 
 /**
  * @brief 读取当前 dq 电压请求。
- * @param vd 输出的 d 轴电压指针。
- * @param vq 输出的 q 轴电压指针。
+ * @param vd_permille 输出的 d 轴电压千分比。
+ * @param vq_permille 输出的 q 轴电压千分比。
+ * @retval APP_STATUS_OK 表示读取成功。
+ * @retval APP_STATUS_INVALID_ARG 表示输出指针无效。
  */
-void FOC_OpenLoop_GetVoltageDQ(float *vd, float *vq);
+APP_Status FOC_OpenLoop_GetVoltageDQPermille(int32_t *vd_permille, int32_t *vq_permille);
 
 /**
- * @brief 获取当前运行状态。
- * @return 1 表示运行中，0 表示停止。
+ * @brief 获取当前控制模式。
+ * @return 当前控制模式。
  */
-uint8_t FOC_OpenLoop_IsRunning(void);
+FOC_ControlMode FOC_OpenLoop_GetMode(void);
 
 #ifdef __cplusplus
 }

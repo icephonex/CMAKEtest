@@ -62,6 +62,12 @@ DMA_HandleTypeDef hdma_usart1_tx;
 osThreadId defaultTaskHandle;
 osThreadId focOpenLoopTaskHandle;
 /* USER CODE BEGIN PV */
+static FOC_Port_Config g_foc_port_config = {
+    .timer = &htim8,
+    .channel_u = TIM_CHANNEL_1,
+    .channel_v = TIM_CHANNEL_2,
+    .channel_w = TIM_CHANNEL_3,
+};
 
 /* USER CODE END PV */
 
@@ -120,11 +126,20 @@ int main(void)
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
   /* 上电只初始化 FOC 端口层与开环控制层，不自动启动 PWM 输出。 */
-  FOC_Port_Init();
-  FOC_OpenLoop_Init();
+  if (FOC_Port_Init(&g_foc_port_config) != APP_STATUS_OK)
+  {
+    Error_Handler();
+  }
+  if (FOC_OpenLoop_Init() != APP_STATUS_OK)
+  {
+    Error_Handler();
+  }
 
-  AT_Server_Port_Init(&huart1);
-  if (AT_Server_Init(AT_Server_Port_GetConfig()) != 0)
+  if (AT_Server_Port_Init(&huart1) != APP_STATUS_OK)
+  {
+    Error_Handler();
+  }
+  if (AT_Server_Init(AT_Server_Port_GetConfig()) != APP_STATUS_OK)
   {
     Error_Handler();
   }

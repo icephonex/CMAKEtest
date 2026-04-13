@@ -1,6 +1,8 @@
 #ifndef AT_SERVER_H
 #define AT_SERVER_H
 
+#include "app_base.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -40,7 +42,7 @@ typedef struct {
 } AT_Server_Request;
 
 /* 底层发送回调，由端口层提供具体串口输出实现 */
-typedef int (*AT_Server_WriteFn)(const uint8_t* data, size_t len, void* context);
+typedef APP_Status (*AT_Server_WriteFn)(const uint8_t* data, size_t len, void* context);
 /* 业务处理回调，由端口层实现具体命令逻辑 */
 typedef AT_Server_HandlerResult (*AT_Server_HandleFn)(const AT_Server_Request* request, void* context);
 /* 获取系统时基的回调，用于超时丢弃不完整命令 */
@@ -69,20 +71,20 @@ typedef struct {
 } AT_Server_Config;
 
 /* 初始化通用 AT 协议引擎 */
-int AT_Server_Init(const AT_Server_Config* config);
+APP_Status AT_Server_Init(const AT_Server_Config* config);
 /* 向环形缓冲区写入一批新收到的字节 */
 size_t AT_Server_InputBytes(const uint8_t* data, size_t len);
 /* 在循环任务中轮询调用，负责取字节、拼包、解析与分发 */
 void AT_Server_Poll(void);
 /* 统一发送 OK 响应 */
-int AT_Server_WriteOk(void);
+APP_Status AT_Server_WriteOk(void);
 /* 统一发送 ERROR 响应 */
-int AT_Server_WriteError(void);
+APP_Status AT_Server_WriteError(void);
 /* 统一发送 +HEAD:DATA\r\n 形式的数据响应 */
-int AT_Server_WriteHeadData(const char* head, const char* data);
+APP_Status AT_Server_WriteHeadData(const char* head, const char* data);
 
 #ifdef __cplusplus
 }
-#endif
+#endif /* AT_SERVER_H */
 
 #endif

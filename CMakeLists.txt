@@ -47,6 +47,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/at_server_port.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/foc_port.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/lfs_port.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/app_text.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/at_server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/foc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/foc_openloop.c

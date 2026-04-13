@@ -1,6 +1,7 @@
 #ifndef AT_SERVER_PORT_H
 #define AT_SERVER_PORT_H
 
+#include "app_base.h"
 #include "main.h"
 #include "at_server.h"
 
@@ -14,7 +15,7 @@
 #define AT_SERVER_PORT_PARTIAL_TIMEOUT_MS 100U
 
 /* 绑定串口、启动 DMA 接收并打开空闲中断 */
-void AT_Server_Port_Init(UART_HandleTypeDef *huart);
+APP_Status AT_Server_Port_Init(UART_HandleTypeDef *huart);
 /* 返回通用 AT 引擎初始化所需配置 */
 const AT_Server_Config *AT_Server_Port_GetConfig(void);
 /* 在串口空闲中断中调用，把 DMA 缓冲区数据转存到 AT 通用层 */

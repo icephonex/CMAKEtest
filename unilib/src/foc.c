@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#define FOC_ZERO                (0.0f)
 #define FOC_HALF                (0.5f)
 #define FOC_ONE                 (1.0f)
 #define FOC_MAX_VECTOR_MAG      (FOC_INV_SQRT3)
@@ -91,23 +92,28 @@ FOC_AlphaBeta FOC_LimitAlphaBeta(FOC_AlphaBeta v_ab, float max_magnitude)
 {
     float magnitude;
     float scale;
+    FOC_AlphaBeta limited;
 
-    if (max_magnitude <= 0.0f)
+    limited = v_ab;
+
+    if (max_magnitude <= FOC_ZERO)
     {
-        return (FOC_AlphaBeta){0.0f, 0.0f};
+        limited.alpha = FOC_ZERO;
+        limited.beta = FOC_ZERO;
+        return limited;
     }
 
-    magnitude = sqrtf((v_ab.alpha * v_ab.alpha) + (v_ab.beta * v_ab.beta));
+    magnitude = sqrtf((limited.alpha * limited.alpha) + (limited.beta * limited.beta));
     if (magnitude <= max_magnitude)
     {
-        return v_ab;
+        return limited;
     }
 
     scale = max_magnitude / magnitude;
-    v_ab.alpha *= scale;
-    v_ab.beta *= scale;
+    limited.alpha *= scale;
+    limited.beta *= scale;
 
-    return v_ab;
+    return limited;
 }
 
 FOC_Duty FOC_AlphaBetaToDuty(FOC_AlphaBeta v_ab)

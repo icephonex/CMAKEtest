@@ -1,11 +1,9 @@
 #include "at_server_port.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
+#include "app_text.h"
 #include "foc_openloop.h"
-#include "foc_port.h"
 
 /* 当前用于 AT 通道的串口句柄 */
 static UART_HandleTypeDef *s_at_uart = NULL;
@@ -25,8 +23,6 @@ static int32_t s_foc_freq_millihz;
 static int32_t s_foc_vd_permille;
 /* 当前缓存的 q 轴电压千分比。 */
 static int32_t s_foc_vq_permille;
-/* 当前是否处于静态矢量调试输出模式。 */
-static uint8_t s_foc_manual_output_enabled;
 
 /**
  * @brief 比较请求命令名是否与目标命令名一致。
@@ -36,133 +32,99 @@ static uint8_t s_foc_manual_output_enabled;
  */
 static uint8_t AT_Server_Port_NameEquals(const AT_Server_Request *request, const char *name)
 {
-    size_t name_len;
+    uint8_t matched = APP_FALSE;
 
     if ((request == NULL) || (request->name == NULL) || (name == NULL))
     {
-        return 0U;
+        return APP_FALSE;
     }
 
-    name_len = strlen(name);
-    if (request->name_len != name_len)
+    if (APP_Text_EqualsLiteral(request->name, request->name_len, name, &matched) != APP_STATUS_OK)
     {
-        return 0U;
+        return APP_FALSE;
     }
 
-    return (uint8_t)(memcmp(request->name, name, name_len) == 0 ? 1U : 0U);
+    return matched;
 }
 
 /**
- * @brief 将字符串解析为有符号 32 位整数。
- * @param text 输入字符串起始地址。
- * @param value 输出的解析结果。
- * @return 0 表示解析成功，-1 表示解析失败。
- */
-static int AT_Server_Port_ParseInt32(const char *text, int32_t *value)
-{
-    char *end_ptr;
-    long parsed;
-
-    if ((text == NULL) || (value == NULL) || (*text == '\0'))
-    {
-        return -1;
-    }
-
-    parsed = strtol(text, &end_ptr, 10);
-    if ((*end_ptr != '\0') || (parsed < (long)INT32_MIN) || (parsed > (long)INT32_MAX))
-    {
-        return -1;
-    }
-
-    *value = (int32_t)parsed;
-    return 0;
-}
-
-/**
- * @brief 解析 "x,y" 形式的两个有符号整数参数。
- * @param args 输入参数字符串。
- * @param first_value 输出的第一个整数。
- * @param second_value 输出的第二个整数。
- * @return 0 表示解析成功，-1 表示解析失败。
- */
-static int AT_Server_Port_ParseInt32Pair(const char *args, int32_t *first_value, int32_t *second_value)
-{
-    const char *comma;
-    size_t first_len;
-    char first_buffer[16];
-    char second_buffer[16];
-
-    if ((args == NULL) || (first_value == NULL) || (second_value == NULL))
-    {
-        return -1;
-    }
-
-    comma = strchr(args, ',');
-    if ((comma == NULL) || (comma == args) || (comma[1] == '\0'))
-    {
-        return -1;
-    }
-
-    first_len = (size_t)(comma - args);
-    if ((first_len >= sizeof(first_buffer)) || (strlen(comma + 1U) >= sizeof(second_buffer)))
-    {
-        return -1;
-    }
-
-    memcpy(first_buffer, args, first_len);
-    first_buffer[first_len] = '\0';
-    strcpy(second_buffer, comma + 1U);
-
-    if ((AT_Server_Port_ParseInt32(first_buffer, first_value) != 0) ||
-        (AT_Server_Port_ParseInt32(second_buffer, second_value) != 0))
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-/**
- * @brief 把当前缓存的千分比电压请求转换为 alpha-beta 浮点量。
+ * @brief 查询当前缓存的 FOC 静态矢量请求并按 AT 头数据格式返回。
  * @param None
- * @return 当前缓存的 alpha-beta 电压矢量。
+ * @return APP_STATUS_OK 表示发送成功，其他状态码表示发送失败。
  */
-static FOC_AlphaBeta AT_Server_Port_GetFocVector(void)
-{
-    FOC_AlphaBeta v_ab;
-
-    v_ab.alpha = (float)s_foc_alpha_permille / 1000.0f;
-    v_ab.beta = (float)s_foc_beta_permille / 1000.0f;
-
-    return v_ab;
-}
-
-/**
- * @brief 查询当前缓存的 FOC 电压请求并按 AT 头数据格式返回。
- * @param None
- * @return 0 表示发送成功，-1 表示发送失败。
- */
-static int AT_Server_Port_WriteFocVector(void)
+static APP_Status AT_Server_Port_WriteFocVector(void)
 {
     char data[32];
 
-    (void)snprintf(data, sizeof(data), "%ld,%ld", (long)s_foc_alpha_permille, (long)s_foc_beta_permille);
+    if (APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_alpha_permille, s_foc_beta_permille) != APP_STATUS_OK)
+    {
+        return APP_STATUS_RANGE;
+    }
+
     return AT_Server_WriteHeadData("FOCVAB", data);
 }
 
 /**
- * @brief 查询当前 FOC PWM 运行状态并按 AT 头数据格式返回。
+ * @brief 查询当前开环频率并按 AT 头数据格式返回。
  * @param None
- * @return 0 表示发送成功，-1 表示发送失败。
+ * @return APP_STATUS_OK 表示发送成功，其他状态码表示发送失败。
  */
-static int AT_Server_Port_WriteFocState(void)
+static APP_Status AT_Server_Port_WriteFocFrequency(void)
 {
-    if (FOC_OpenLoop_IsRunning() != 0U)
+    char data[24];
+    uint32_t frequency_millihz = 0U;
+
+    if (FOC_OpenLoop_GetFrequencyMilliHz(&frequency_millihz) != APP_STATUS_OK)
+    {
+        return APP_STATUS_IO;
+    }
+
+    s_foc_freq_millihz = (int32_t)frequency_millihz;
+    if (APP_Text_FormatInt32(data, sizeof(data), s_foc_freq_millihz) != APP_STATUS_OK)
+    {
+        return APP_STATUS_RANGE;
+    }
+
+    return AT_Server_WriteHeadData("FOCFREQ", data);
+}
+
+/**
+ * @brief 查询当前 dq 请求并按 AT 头数据格式返回。
+ * @param None
+ * @return APP_STATUS_OK 表示发送成功，其他状态码表示发送失败。
+ */
+static APP_Status AT_Server_Port_WriteFocDQ(void)
+{
+    char data[32];
+
+    if (FOC_OpenLoop_GetVoltageDQPermille(&s_foc_vd_permille, &s_foc_vq_permille) != APP_STATUS_OK)
+    {
+        return APP_STATUS_IO;
+    }
+
+    if (APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_vd_permille, s_foc_vq_permille) != APP_STATUS_OK)
+    {
+        return APP_STATUS_RANGE;
+    }
+
+    return AT_Server_WriteHeadData("FOCDQ", data);
+}
+
+/**
+ * @brief 查询当前 FOC 控制模式并按 AT 头数据格式返回。
+ * @param None
+ * @return APP_STATUS_OK 表示发送成功，其他状态码表示发送失败。
+ */
+static APP_Status AT_Server_Port_WriteFocState(void)
+{
+    const FOC_ControlMode mode = FOC_OpenLoop_GetMode();
+
+    if (mode == FOC_CONTROL_MODE_OPENLOOP)
     {
         return AT_Server_WriteHeadData("FOCSTATE", "RUN");
     }
 
-    if (s_foc_manual_output_enabled != 0U)
+    if (mode == FOC_CONTROL_MODE_STATIC_VECTOR)
     {
         return AT_Server_WriteHeadData("FOCSTATE", "STATIC");
     }
@@ -171,21 +133,21 @@ static int AT_Server_Port_WriteFocState(void)
 }
 
 /* 通用层发送回调：统一从这里走串口发送 */
-static int AT_Server_Port_Write(const uint8_t *data, size_t len, void *context)
+static APP_Status AT_Server_Port_Write(const uint8_t *data, size_t len, void *context)
 {
     UART_HandleTypeDef *huart = (UART_HandleTypeDef *)context;
 
     if ((huart == NULL) || (len == 0U) || (len > 0xFFFFU))
     {
-        return -1;
+        return APP_STATUS_INVALID_ARG;
     }
 
     if (HAL_UART_Transmit(huart, (uint8_t *)data, (uint16_t)len, 100U) != HAL_OK)
     {
-        return -1;
+        return APP_STATUS_HW_ERROR;
     }
 
-    return 0;
+    return APP_STATUS_OK;
 }
 
 /* 通用层获取时基回调：直接复用 HAL 毫秒节拍 */
@@ -210,8 +172,15 @@ static AT_Server_Config s_at_server_config = {
     .partial_timeout_ms = AT_SERVER_PORT_PARTIAL_TIMEOUT_MS,
 };
 
-void AT_Server_Port_Init(UART_HandleTypeDef *huart)
+APP_Status AT_Server_Port_Init(UART_HandleTypeDef *huart)
 {
+    APP_Status status;
+
+    if ((huart == NULL) || (huart->hdmarx == NULL))
+    {
+        return APP_STATUS_INVALID_ARG;
+    }
+
     /* 保存串口句柄，并把上下文透传给通用层回调 */
     s_at_uart = huart;
     s_at_server_config.write_context = huart;
@@ -226,11 +195,18 @@ void AT_Server_Port_Init(UART_HandleTypeDef *huart)
     s_foc_freq_millihz = 5000;
     s_foc_vd_permille = 0;
     s_foc_vq_permille = 100;
-    s_foc_manual_output_enabled = 0U;
 
-    FOC_OpenLoop_SetFrequencyHz((float)s_foc_freq_millihz / 1000.0f);
-    FOC_OpenLoop_SetVoltageDQ((float)s_foc_vd_permille / 1000.0f,
-                              (float)s_foc_vq_permille / 1000.0f);
+    status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)s_foc_freq_millihz);
+    if (status != APP_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = FOC_OpenLoop_SetVoltageDQPermille(s_foc_vd_permille, s_foc_vq_permille);
+    if (status != APP_STATUS_OK)
+    {
+        return status;
+    }
 
     /* 打开 UART 空闲中断，用于判定一批 DMA 数据接收结束 */
     __HAL_UART_CLEAR_IDLEFLAG(huart);
@@ -239,11 +215,12 @@ void AT_Server_Port_Init(UART_HandleTypeDef *huart)
     /* 启动 DMA 循环接收，数据先进入 DMA 缓冲区 */
     if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
     {
-        Error_Handler();
+        return APP_STATUS_HW_ERROR;
     }
 
     /* 本方案只关心空闲中断切包，不使用半传输中断 */
     __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+    return APP_STATUS_OK;
 }
 
 const AT_Server_Config *AT_Server_Port_GetConfig(void)
@@ -267,7 +244,7 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef *huart)
     /* 停止 DMA，锁定当前这批数据长度 */
     if (HAL_UART_DMAStop(huart) != HAL_OK)
     {
-        Error_Handler();
+        return;
     }
 
     received = (uint16_t)(sizeof(s_rx_dma_buffer) - remaining);
@@ -281,7 +258,7 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef *huart)
     memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
     if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
     {
-        Error_Handler();
+        return;
     }
 
     /* 继续保持关闭半传输中断 */
@@ -290,6 +267,11 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef *huart)
 
 AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, void *context)
 {
+    APP_Status status;
+    int32_t parsed_value;
+    int32_t first_value;
+    int32_t second_value;
+
     (void)context;
 
     if (request == NULL)
@@ -300,55 +282,41 @@ AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, 
     if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
         (AT_Server_Port_NameEquals(request, "FOCSTART") != 0U))
     {
-        if (s_foc_manual_output_enabled != 0U)
-        {
-            FOC_Port_StopPwm();
-            s_foc_manual_output_enabled = 0U;
-        }
-
-        FOC_OpenLoop_RequestStart();
-        return AT_SERVER_HANDLER_RESULT_OK;
+        return (FOC_OpenLoop_RequestStart() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                              : AT_SERVER_HANDLER_RESULT_ERROR;
     }
 
     if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
         (AT_Server_Port_NameEquals(request, "FOCSTOP") != 0U))
     {
-        FOC_OpenLoop_RequestStop();
-
-        if (s_foc_manual_output_enabled != 0U)
-        {
-            FOC_Port_StopPwm();
-            s_foc_manual_output_enabled = 0U;
-        }
-
-        return AT_SERVER_HANDLER_RESULT_OK;
+        return (FOC_OpenLoop_RequestStop() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                             : AT_SERVER_HANDLER_RESULT_ERROR;
     }
 
     if (AT_Server_Port_NameEquals(request, "FOCFREQ") != 0U)
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
-            if (AT_Server_Port_ParseInt32(request->args, &s_foc_freq_millihz) != 0)
+            status = APP_Text_ParseInt32(request->args, &parsed_value);
+            if ((status != APP_STATUS_OK) || (parsed_value < 0))
             {
                 return AT_SERVER_HANDLER_RESULT_ERROR;
             }
 
-            if (s_foc_freq_millihz < 0)
+            status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)parsed_value);
+            if (status != APP_STATUS_OK)
             {
-                s_foc_freq_millihz = 0;
+                return AT_SERVER_HANDLER_RESULT_ERROR;
             }
 
-            FOC_OpenLoop_SetFrequencyHz((float)s_foc_freq_millihz / 1000.0f);
+            s_foc_freq_millihz = parsed_value;
             return AT_SERVER_HANDLER_RESULT_OK;
         }
 
         if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            char data[24];
-
-            (void)snprintf(data, sizeof(data), "%ld", (long)s_foc_freq_millihz);
-            return (AT_Server_WriteHeadData("FOCFREQ", data) == 0) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                   : AT_SERVER_HANDLER_RESULT_ERROR;
+            return (AT_Server_Port_WriteFocFrequency() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                          : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
 
@@ -356,25 +324,27 @@ AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, 
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
-            if (AT_Server_Port_ParseInt32Pair(request->args, &s_foc_vd_permille, &s_foc_vq_permille) != 0)
+            status = APP_Text_ParseInt32Pair(request->args, &first_value, &second_value);
+            if (status != APP_STATUS_OK)
             {
                 return AT_SERVER_HANDLER_RESULT_ERROR;
             }
 
-            FOC_OpenLoop_SetVoltageDQ((float)s_foc_vd_permille / 1000.0f,
-                                      (float)s_foc_vq_permille / 1000.0f);
+            status = FOC_OpenLoop_SetVoltageDQPermille(first_value, second_value);
+            if (status != APP_STATUS_OK)
+            {
+                return AT_SERVER_HANDLER_RESULT_ERROR;
+            }
+
+            s_foc_vd_permille = first_value;
+            s_foc_vq_permille = second_value;
             return AT_SERVER_HANDLER_RESULT_OK;
         }
 
         if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            char data[32];
-
-            (void)snprintf(data, sizeof(data), "%ld,%ld",
-                           (long)s_foc_vd_permille,
-                           (long)s_foc_vq_permille);
-            return (AT_Server_WriteHeadData("FOCDQ", data) == 0) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                 : AT_SERVER_HANDLER_RESULT_ERROR;
+            return (AT_Server_Port_WriteFocDQ() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                   : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
 
@@ -382,35 +352,35 @@ AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, 
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
-            if (AT_Server_Port_ParseInt32Pair(request->args, &s_foc_alpha_permille, &s_foc_beta_permille) != 0)
+            status = APP_Text_ParseInt32Pair(request->args, &first_value, &second_value);
+            if (status != APP_STATUS_OK)
             {
                 return AT_SERVER_HANDLER_RESULT_ERROR;
             }
 
-            if (FOC_OpenLoop_IsRunning() != 0U)
+            status = FOC_OpenLoop_SetStaticVectorPermille(first_value, second_value);
+            if (status != APP_STATUS_OK)
             {
                 return AT_SERVER_HANDLER_RESULT_ERROR;
             }
 
-            FOC_Port_OutputAlphaBeta(AT_Server_Port_GetFocVector());
-            FOC_Port_StartPwm();
-            s_foc_manual_output_enabled = 1U;
-
+            s_foc_alpha_permille = first_value;
+            s_foc_beta_permille = second_value;
             return AT_SERVER_HANDLER_RESULT_OK;
         }
 
         if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            return (AT_Server_Port_WriteFocVector() == 0) ? AT_SERVER_HANDLER_RESULT_OK
-                                                          : AT_SERVER_HANDLER_RESULT_ERROR;
+            return (AT_Server_Port_WriteFocVector() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                       : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
 
     if ((request->type == AT_SERVER_COMMAND_TYPE_QUERY) &&
         (AT_Server_Port_NameEquals(request, "FOCSTATE") != 0U))
     {
-        return (AT_Server_Port_WriteFocState() == 0) ? AT_SERVER_HANDLER_RESULT_OK
-                                                     : AT_SERVER_HANDLER_RESULT_ERROR;
+        return (AT_Server_Port_WriteFocState() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                  : AT_SERVER_HANDLER_RESULT_ERROR;
     }
 
     return AT_SERVER_HANDLER_RESULT_UNSUPPORTED;

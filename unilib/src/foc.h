@@ -68,13 +68,13 @@ FOC_AlphaBeta FOC_InvPark(FOC_DQ dq, float sin_theta, float cos_theta);
  * @brief 对 alpha-beta 电压矢量做幅值限幅。
  * @param v_ab 输入的 alpha-beta 电压矢量。
  * @param max_magnitude 允许的最大矢量幅值。
- * @return 限幅后的 alpha-beta 矢量。
+ * @return 限幅后的 alpha-beta 矢量，仅在算法层与控制层内部流转。
  */
 FOC_AlphaBeta FOC_LimitAlphaBeta(FOC_AlphaBeta v_ab, float max_magnitude);
 
 /**
  * @brief 将 alpha-beta 电压请求转换为三相归一化占空比。
- * @param v_ab 输入的 alpha-beta 电压矢量。
+ * @param v_ab 输入的 alpha-beta 电压矢量，仅在算法层与控制层内部流转。
  * @return 范围位于 0.0f 到 1.0f 的三相占空比。
  */
 FOC_Duty FOC_AlphaBetaToDuty(FOC_AlphaBeta v_ab);
