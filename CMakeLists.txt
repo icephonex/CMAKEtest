@@ -45,8 +45,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/at_server_port.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/foc_port.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Dev/port/lfs_port.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/at_server.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/foc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/foc_openloop.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/src/spi_flash.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/thirdparty/lwrb-develop/lwrb.c
     ${CMAKE_CURRENT_SOURCE_DIR}/unilib/thirdparty/littlefs-master/lfs.c

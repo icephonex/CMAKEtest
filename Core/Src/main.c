@@ -24,6 +24,8 @@
 /* USER CODE BEGIN Includes */
 #include "at_server.h"
 #include "at_server_port.h"
+#include "foc_openloop.h"
+#include "foc_port.h"
 
 /* USER CODE END Includes */
 
@@ -34,6 +36,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* 72 MHz 定时器时钟下，3599 对应约 20 kHz PWM 频率。 */
+#define FOC_PWM_PERIOD_TICKS      3599U
+/* 72 个计数约为 1 us，用作首版互补输出死区时间。 */
+#define FOC_PWM_DEADTIME_TICKS    72U
 
 /* USER CODE END PD */
 
@@ -54,6 +60,7 @@ DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
 
 osThreadId defaultTaskHandle;
+osThreadId focOpenLoopTaskHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -112,6 +119,10 @@ int main(void)
   MX_CAN_Init();
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
+  /* 上电只初始化 FOC 端口层与开环控制层，不自动启动 PWM 输出。 */
+  FOC_Port_Init();
+  FOC_OpenLoop_Init();
+
   AT_Server_Port_Init(&huart1);
   if (AT_Server_Init(AT_Server_Port_GetConfig()) != 0)
   {
@@ -140,6 +151,12 @@ int main(void)
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  osThreadDef(focOpenLoopTask, FOC_OpenLoop_Task, osPriorityAboveNormal, 0, 256);
+  focOpenLoopTaskHandle = osThreadCreate(osThread(focOpenLoopTask), NULL);
+  if (focOpenLoopTaskHandle == NULL)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* 可在此添加其他线程等 */
@@ -352,6 +369,17 @@ static void MX_TIM8_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM8_Init 2 */
+  /* 将首版 FOC 输出频率覆盖到 20 kHz，便于后续直接按 CCR 改占空比。 */
+  htim8.Init.Period = FOC_PWM_PERIOD_TICKS;
+  __HAL_TIM_SET_AUTORELOAD(&htim8, FOC_PWM_PERIOD_TICKS);
+  __HAL_TIM_SET_COUNTER(&htim8, 0U);
+
+  /* 首版先给一组固定死区，避免互补输出完全无保护。 */
+  sBreakDeadTimeConfig.DeadTime = FOC_PWM_DEADTIME_TICKS;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim8, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END TIM8_Init 2 */
   HAL_TIM_MspPostInit(&htim8);
