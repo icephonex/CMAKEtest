@@ -28,27 +28,29 @@
 #include "lwrb/lwrb.h"
 
 /* 内存置零与拷贝函数 */
-#define BUF_MEMSET      memset
-#define BUF_MEMCPY      memcpy
+#define BUF_MEMSET memset
+#define BUF_MEMCPY memcpy
 
 #define BUF_IS_VALID(b) ((b) != NULL && (b)->buff != NULL && (b)->size > 0)
-#define BUF_MIN(x, y)   ((x) < (y) ? (x) : (y))
-#define BUF_MAX(x, y)   ((x) > (y) ? (x) : (y))
-#define BUF_SEND_EVT(b, type, bp)                                                                                      \
-    do {                                                                                                               \
-        if ((b)->evt_fn != NULL) {                                                                                     \
-            (b)->evt_fn((void*)(b), (type), (bp));                                                                     \
-        }                                                                                                              \
+#define BUF_MIN(x, y) ((x) < (y) ? (x) : (y))
+#define BUF_MAX(x, y) ((x) > (y) ? (x) : (y))
+#define BUF_SEND_EVT(b, type, bp)                   \
+    do                                              \
+    {                                               \
+        if ((b)->evt_fn != NULL)                    \
+        {                                           \
+            (b)->evt_fn((void *)(b), (type), (bp)); \
+        }                                           \
     } while (0)
 
 /* 可选原子操作 */
 #ifdef LWRB_DISABLE_ATOMIC
-#define LWRB_INIT(var, val)        (var) = (val)
-#define LWRB_LOAD(var, type)       (var)
+#define LWRB_INIT(var, val) (var) = (val)
+#define LWRB_LOAD(var, type) (var)
 #define LWRB_STORE(var, val, type) (var) = (val)
 #else
-#define LWRB_INIT(var, val)        atomic_init(&(var), (val))
-#define LWRB_LOAD(var, type)       atomic_load_explicit(&(var), (type))
+#define LWRB_INIT(var, val) atomic_init(&(var), (val))
+#define LWRB_LOAD(var, type) atomic_load_explicit(&(var), (type))
 #define LWRB_STORE(var, val, type) atomic_store_explicit(&(var), (val), (type))
 #endif
 
@@ -61,8 +63,10 @@
  * \return          成功返回 `1`，否则返回 `0`
  */
 uint8_t
-lwrb_init(lwrb_t* buff, void* buffdata, lwrb_sz_t size) {
-    if (buff == NULL || buffdata == NULL || size == 0) {
+lwrb_init(lwrb_t *buff, void *buffdata, lwrb_sz_t size)
+{
+    if (buff == NULL || buffdata == NULL || size == 0)
+    {
         return 0;
     }
 
@@ -80,7 +84,8 @@ lwrb_init(lwrb_t* buff, void* buffdata, lwrb_sz_t size) {
  * \return          可用返回 `1`，否则返回 `0`
  */
 uint8_t
-lwrb_is_ready(lwrb_t* buff) {
+lwrb_is_ready(lwrb_t *buff)
+{
     return BUF_IS_VALID(buff);
 }
 
@@ -90,9 +95,10 @@ lwrb_is_ready(lwrb_t* buff) {
  *                  这里只会将缓冲区数据指针设为 `NULL`
  * \param[in]       buff: 环形缓冲区实例
  */
-void
-lwrb_free(lwrb_t* buff) {
-    if (BUF_IS_VALID(buff)) {
+void lwrb_free(lwrb_t *buff)
+{
+    if (BUF_IS_VALID(buff))
+    {
         buff->buff = NULL;
     }
 }
@@ -102,9 +108,10 @@ lwrb_free(lwrb_t* buff) {
  * \param[in]       buff: 环形缓冲区实例
  * \param[in]       evt_fn: 回调函数
  */
-void
-lwrb_set_evt_fn(lwrb_t* buff, lwrb_evt_fn evt_fn) {
-    if (BUF_IS_VALID(buff)) {
+void lwrb_set_evt_fn(lwrb_t *buff, lwrb_evt_fn evt_fn)
+{
+    if (BUF_IS_VALID(buff))
+    {
         buff->evt_fn = evt_fn;
     }
 }
@@ -114,9 +121,10 @@ lwrb_set_evt_fn(lwrb_t* buff, lwrb_evt_fn evt_fn) {
  * \param[in]       buff: 环形缓冲区实例
  * \param[in]       arg: 用户自定义参数
  */
-void
-lwrb_set_arg(lwrb_t* buff, void* arg) {
-    if (BUF_IS_VALID(buff)) {
+void lwrb_set_arg(lwrb_t *buff, void *arg)
+{
+    if (BUF_IS_VALID(buff))
+    {
         buff->arg = arg;
     }
 }
@@ -126,8 +134,9 @@ lwrb_set_arg(lwrb_t* buff, void* arg) {
  * \param[in]       buff: 环形缓冲区实例
  * \return          之前通过 \ref lwrb_set_arg 设置的用户参数
  */
-void*
-lwrb_get_arg(lwrb_t* buff) {
+void *
+lwrb_get_arg(lwrb_t *buff)
+{
     return buff != NULL ? buff->arg : NULL;
 }
 
@@ -149,10 +158,12 @@ lwrb_get_arg(lwrb_t* buff) {
  *                  无法拷贝完整的数据数组。
  */
 lwrb_sz_t
-lwrb_write(lwrb_t* buff, const void* data, lwrb_sz_t btw) {
+lwrb_write(lwrb_t *buff, const void *data, lwrb_sz_t btw)
+{
     lwrb_sz_t written = 0;
 
-    if (lwrb_write_ex(buff, data, btw, &written, 0)) {
+    if (lwrb_write_ex(buff, data, btw, &written, 0))
+    {
         return written;
     }
     return 0;
@@ -171,18 +182,21 @@ lwrb_write(lwrb_t* buff, const void* data, lwrb_sz_t btw) {
  * \return          写入操作成功返回 `1`，否则返回 `0`
  */
 uint8_t
-lwrb_write_ex(lwrb_t* buff, const void* data, lwrb_sz_t btw, lwrb_sz_t* bwritten, uint16_t flags) {
+lwrb_write_ex(lwrb_t *buff, const void *data, lwrb_sz_t btw, lwrb_sz_t *bwritten, uint16_t flags)
+{
     lwrb_sz_t tocopy = 0, free = 0, w_ptr = 0;
-    const uint8_t* d_ptr = data;
+    const uint8_t *d_ptr = data;
 
-    if (!BUF_IS_VALID(buff) || data == NULL || btw == 0) {
+    if (!BUF_IS_VALID(buff) || data == NULL || btw == 0)
+    {
         return 0;
     }
 
     /* 计算当前最多可写入的字节数 */
     free = lwrb_get_free(buff);
     /* 如果没有空闲空间，或要求全部写入但空间不足，则提前返回 */
-    if (free == 0 || (free < btw && (flags & LWRB_FLAG_WRITE_ALL))) {
+    if (free == 0 || (free < btw && (flags & LWRB_FLAG_WRITE_ALL)))
+    {
         return 0;
     }
     btw = BUF_MIN(free, btw);
@@ -196,13 +210,15 @@ lwrb_write_ex(lwrb_t* buff, const void* data, lwrb_sz_t btw, lwrb_sz_t* bwritten
     btw -= tocopy;
 
     /* 步骤 2：写入缓冲区起始位置（回卷部分） */
-    if (btw > 0) {
+    if (btw > 0)
+    {
         BUF_MEMCPY(buff->buff, d_ptr, btw);
         w_ptr = btw;
     }
 
     /* 步骤 3：检查是否到达缓冲区末尾 */
-    if (w_ptr >= buff->size) {
+    if (w_ptr >= buff->size)
+    {
         w_ptr = 0;
     }
 
@@ -213,7 +229,8 @@ lwrb_write_ex(lwrb_t* buff, const void* data, lwrb_sz_t btw, lwrb_sz_t* bwritten
     LWRB_STORE(buff->w_ptr, w_ptr, memory_order_release);
 
     BUF_SEND_EVT(buff, LWRB_EVT_WRITE, tocopy + btw);
-    if (bwritten != NULL) {
+    if (bwritten != NULL)
+    {
         *bwritten = tocopy + btw;
     }
     return 1;
@@ -233,10 +250,12 @@ lwrb_write_ex(lwrb_t* buff, const void* data, lwrb_sz_t btw, lwrb_sz_t* bwritten
  * \return          从缓冲区读取并拷贝到数据数组中的字节数
  */
 lwrb_sz_t
-lwrb_read(lwrb_t* buff, void* data, lwrb_sz_t btr) {
+lwrb_read(lwrb_t *buff, void *data, lwrb_sz_t btr)
+{
     lwrb_sz_t read = 0;
 
-    if (lwrb_read_ex(buff, data, btr, &read, 0)) {
+    if (lwrb_read_ex(buff, data, btr, &read, 0))
+    {
         return read;
     }
     return 0;
@@ -255,17 +274,20 @@ lwrb_read(lwrb_t* buff, void* data, lwrb_sz_t btr) {
  * \return          读取操作成功返回 `1`，否则返回 `0`
  */
 uint8_t
-lwrb_read_ex(lwrb_t* buff, void* data, lwrb_sz_t btr, lwrb_sz_t* bread, uint16_t flags) {
+lwrb_read_ex(lwrb_t *buff, void *data, lwrb_sz_t btr, lwrb_sz_t *bread, uint16_t flags)
+{
     lwrb_sz_t tocopy = 0, full = 0, r_ptr = 0;
-    uint8_t* d_ptr = data;
+    uint8_t *d_ptr = data;
 
-    if (!BUF_IS_VALID(buff) || data == NULL || btr == 0) {
+    if (!BUF_IS_VALID(buff) || data == NULL || btr == 0)
+    {
         return 0;
     }
 
     /* 计算当前最多可读取的字节数 */
     full = lwrb_get_full(buff);
-    if (full == 0 || (full < btr && (flags & LWRB_FLAG_READ_ALL))) {
+    if (full == 0 || (full < btr && (flags & LWRB_FLAG_READ_ALL)))
+    {
         return 0;
     }
     btr = BUF_MIN(full, btr);
@@ -279,13 +301,15 @@ lwrb_read_ex(lwrb_t* buff, void* data, lwrb_sz_t btr, lwrb_sz_t* bread, uint16_t
     btr -= tocopy;
 
     /* 步骤 2：从缓冲区起始位置读取（回卷部分） */
-    if (btr > 0) {
+    if (btr > 0)
+    {
         BUF_MEMCPY(d_ptr, buff->buff, btr);
         r_ptr = btr;
     }
 
     /* 步骤 3：检查是否到达缓冲区末尾 */
-    if (r_ptr >= buff->size) {
+    if (r_ptr >= buff->size)
+    {
         r_ptr = 0;
     }
 
@@ -296,7 +320,8 @@ lwrb_read_ex(lwrb_t* buff, void* data, lwrb_sz_t btr, lwrb_sz_t* bread, uint16_t
     LWRB_STORE(buff->r_ptr, r_ptr, memory_order_release);
 
     BUF_SEND_EVT(buff, LWRB_EVT_READ, tocopy + btr);
-    if (bread != NULL) {
+    if (bread != NULL)
+    {
         *bread = tocopy + btr;
     }
     return 1;
@@ -311,11 +336,13 @@ lwrb_read_ex(lwrb_t* buff, void* data, lwrb_sz_t btr, lwrb_sz_t* bread, uint16_t
  * \return          窥视并写入输出数组的字节数
  */
 lwrb_sz_t
-lwrb_peek(const lwrb_t* buff, lwrb_sz_t skip_count, void* data, lwrb_sz_t btp) {
+lwrb_peek(const lwrb_t *buff, lwrb_sz_t skip_count, void *data, lwrb_sz_t btp)
+{
     lwrb_sz_t full = 0, tocopy = 0, r_ptr = 0;
-    uint8_t* d_ptr = data;
+    uint8_t *d_ptr = data;
 
-    if (!BUF_IS_VALID(buff) || data == NULL || btp == 0) {
+    if (!BUF_IS_VALID(buff) || data == NULL || btp == 0)
+    {
         return 0;
     }
 
@@ -327,13 +354,15 @@ lwrb_peek(const lwrb_t* buff, lwrb_sz_t skip_count, void* data, lwrb_sz_t btp) {
      * 因此可以安全地直接返回
      */
     full = lwrb_get_full(buff);
-    if (skip_count >= full) {
+    if (skip_count >= full)
+    {
         return 0;
     }
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
     r_ptr += skip_count;
     full -= skip_count;
-    if (r_ptr >= buff->size) {
+    if (r_ptr >= buff->size)
+    {
         r_ptr -= buff->size;
     }
     btp = BUF_MIN(full, btp);
@@ -345,7 +374,8 @@ lwrb_peek(const lwrb_t* buff, lwrb_sz_t skip_count, void* data, lwrb_sz_t btp) {
     btp -= tocopy;
 
     /* 步骤 2：从缓冲区起始位置读取（回卷部分） */
-    if (btp > 0) {
+    if (btp > 0)
+    {
         BUF_MEMCPY(d_ptr, buff->buff, btp);
     }
     return tocopy + btp;
@@ -357,10 +387,12 @@ lwrb_peek(const lwrb_t* buff, lwrb_sz_t skip_count, void* data, lwrb_sz_t btp) {
  * \return          空闲内存中的字节数
  */
 lwrb_sz_t
-lwrb_get_free(const lwrb_t* buff) {
+lwrb_get_free(const lwrb_t *buff)
+{
     lwrb_sz_t size = 0, w_ptr = 0, r_ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return 0;
     }
 
@@ -385,9 +417,12 @@ lwrb_get_free(const lwrb_t* buff) {
     w_ptr = LWRB_LOAD(buff->w_ptr, memory_order_relaxed);
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
 
-    if (w_ptr >= r_ptr) {
+    if (w_ptr >= r_ptr)
+    {
         size = buff->size - (w_ptr - r_ptr);
-    } else {
+    }
+    else
+    {
         size = r_ptr - w_ptr;
     }
 
@@ -401,10 +436,12 @@ lwrb_get_free(const lwrb_t* buff) {
  * \return          可供读取的字节数
  */
 lwrb_sz_t
-lwrb_get_full(const lwrb_t* buff) {
+lwrb_get_full(const lwrb_t *buff)
+{
     lwrb_sz_t size = 0, w_ptr = 0, r_ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return 0;
     }
 
@@ -429,9 +466,12 @@ lwrb_get_full(const lwrb_t* buff) {
     w_ptr = LWRB_LOAD(buff->w_ptr, memory_order_relaxed);
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
 
-    if (w_ptr >= r_ptr) {
+    if (w_ptr >= r_ptr)
+    {
         size = w_ptr - r_ptr;
-    } else {
+    }
+    else
+    {
         size = buff->size - (r_ptr - w_ptr);
     }
     return size;
@@ -443,9 +483,10 @@ lwrb_get_full(const lwrb_t* buff) {
  *                  使用时，应用程序必须确保当前没有进行中的读写操作
  * \param[in]       buff: 环形缓冲区实例
  */
-void
-lwrb_reset(lwrb_t* buff) {
-    if (BUF_IS_VALID(buff)) {
+void lwrb_reset(lwrb_t *buff)
+{
+    if (BUF_IS_VALID(buff))
+    {
         LWRB_STORE(buff->w_ptr, 0, memory_order_release);
         LWRB_STORE(buff->r_ptr, 0, memory_order_release);
         BUF_SEND_EVT(buff, LWRB_EVT_RESET, 0);
@@ -457,11 +498,13 @@ lwrb_reset(lwrb_t* buff) {
  * \param[in]       buff: 环形缓冲区实例
  * \return          线性缓冲区的起始地址
  */
-void*
-lwrb_get_linear_block_read_address(const lwrb_t* buff) {
+void *
+lwrb_get_linear_block_read_address(const lwrb_t *buff)
+{
     lwrb_sz_t ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return NULL;
     }
     ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
@@ -474,10 +517,12 @@ lwrb_get_linear_block_read_address(const lwrb_t* buff) {
  * \return          读操作可使用的线性缓冲区长度，单位为字节
  */
 lwrb_sz_t
-lwrb_get_linear_block_read_length(const lwrb_t* buff) {
+lwrb_get_linear_block_read_length(const lwrb_t *buff)
+{
     lwrb_sz_t len = 0, w_ptr = 0, r_ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return 0;
     }
 
@@ -488,11 +533,16 @@ lwrb_get_linear_block_read_length(const lwrb_t* buff) {
     w_ptr = LWRB_LOAD(buff->w_ptr, memory_order_relaxed);
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
 
-    if (w_ptr > r_ptr) {
+    if (w_ptr > r_ptr)
+    {
         len = w_ptr - r_ptr;
-    } else if (r_ptr > w_ptr) {
+    }
+    else if (r_ptr > w_ptr)
+    {
         len = buff->size - r_ptr;
-    } else {
+    }
+    else
+    {
         len = 0;
     }
     return len;
@@ -508,10 +558,12 @@ lwrb_get_linear_block_read_length(const lwrb_t* buff) {
  * \return          实际跳过的字节数
  */
 lwrb_sz_t
-lwrb_skip(lwrb_t* buff, lwrb_sz_t len) {
+lwrb_skip(lwrb_t *buff, lwrb_sz_t len)
+{
     lwrb_sz_t full = 0, r_ptr = 0;
 
-    if (!BUF_IS_VALID(buff) || len == 0) {
+    if (!BUF_IS_VALID(buff) || len == 0)
+    {
         return 0;
     }
 
@@ -519,7 +571,8 @@ lwrb_skip(lwrb_t* buff, lwrb_sz_t len) {
     len = BUF_MIN(len, full);
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_acquire);
     r_ptr += len;
-    if (r_ptr >= buff->size) {
+    if (r_ptr >= buff->size)
+    {
         r_ptr -= buff->size;
     }
     LWRB_STORE(buff->r_ptr, r_ptr, memory_order_release);
@@ -532,11 +585,13 @@ lwrb_skip(lwrb_t* buff, lwrb_sz_t len) {
  * \param[in]       buff: 环形缓冲区实例
  * \return          线性缓冲区的起始地址
  */
-void*
-lwrb_get_linear_block_write_address(const lwrb_t* buff) {
+void *
+lwrb_get_linear_block_write_address(const lwrb_t *buff)
+{
     lwrb_sz_t ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return NULL;
     }
     ptr = LWRB_LOAD(buff->w_ptr, memory_order_relaxed);
@@ -549,10 +604,12 @@ lwrb_get_linear_block_write_address(const lwrb_t* buff) {
  * \return          写操作可使用的线性缓冲区长度，单位为字节
  */
 lwrb_sz_t
-lwrb_get_linear_block_write_length(const lwrb_t* buff) {
+lwrb_get_linear_block_write_length(const lwrb_t *buff)
+{
     lwrb_sz_t len = 0, w_ptr = 0, r_ptr = 0;
 
-    if (!BUF_IS_VALID(buff)) {
+    if (!BUF_IS_VALID(buff))
+    {
         return 0;
     }
 
@@ -563,14 +620,16 @@ lwrb_get_linear_block_write_length(const lwrb_t* buff) {
     w_ptr = LWRB_LOAD(buff->w_ptr, memory_order_relaxed);
     r_ptr = LWRB_LOAD(buff->r_ptr, memory_order_relaxed);
 
-    if (w_ptr >= r_ptr) {
+    if (w_ptr >= r_ptr)
+    {
         len = buff->size - w_ptr;
         /*
          * 当读指针为 0 时，
          * 最大长度必须减 1；否则如果写入过多字节，
          * 缓冲区会再次被判定为空（r == w）
          */
-        if (r_ptr == 0) {
+        if (r_ptr == 0)
+        {
             /*
              * 这里不会下溢：
              * - 如果 r 不为 0，就不会进入这个分支
@@ -578,7 +637,9 @@ lwrb_get_linear_block_write_length(const lwrb_t* buff) {
              */
             --len;
         }
-    } else {
+    }
+    else
+    {
         len = r_ptr - w_ptr - 1;
     }
     return len;
@@ -595,10 +656,12 @@ lwrb_get_linear_block_write_length(const lwrb_t* buff) {
  * \return          实际推进的写入字节数
  */
 lwrb_sz_t
-lwrb_advance(lwrb_t* buff, lwrb_sz_t len) {
+lwrb_advance(lwrb_t *buff, lwrb_sz_t len)
+{
     lwrb_sz_t free = 0, w_ptr = 0;
 
-    if (!BUF_IS_VALID(buff) || len == 0) {
+    if (!BUF_IS_VALID(buff) || len == 0)
+    {
         return 0;
     }
 
@@ -607,7 +670,8 @@ lwrb_advance(lwrb_t* buff, lwrb_sz_t len) {
     len = BUF_MIN(len, free);
     w_ptr = LWRB_LOAD(buff->w_ptr, memory_order_acquire);
     w_ptr += len;
-    if (w_ptr >= buff->size) {
+    if (w_ptr >= buff->size)
+    {
         w_ptr -= buff->size;
     }
     LWRB_STORE(buff->w_ptr, w_ptr, memory_order_release);
@@ -629,19 +693,22 @@ lwrb_advance(lwrb_t* buff, lwrb_sz_t len) {
  * \return          找到 \arg bts 时返回 `1`，否则返回 `0`
  */
 uint8_t
-lwrb_find(const lwrb_t* buff, const void* bts, lwrb_sz_t len, lwrb_sz_t start_offset, lwrb_sz_t* found_idx) {
+lwrb_find(const lwrb_t *buff, const void *bts, lwrb_sz_t len, lwrb_sz_t start_offset, lwrb_sz_t *found_idx)
+{
     lwrb_sz_t full = 0, r_ptr = 0, buff_r_ptr = 0, max_x = 0;
     uint8_t found = 0;
-    const uint8_t* needle = bts;
+    const uint8_t *needle = bts;
 
-    if (!BUF_IS_VALID(buff) || needle == NULL || len == 0 || found_idx == NULL) {
+    if (!BUF_IS_VALID(buff) || needle == NULL || len == 0 || found_idx == NULL)
+    {
         return 0;
     }
     *found_idx = 0;
 
     full = lwrb_get_full(buff);
     /* 验证初始条件 */
-    if (full < (len + start_offset)) {
+    if (full < (len + start_offset))
+    {
         return 0;
     }
 
@@ -650,26 +717,32 @@ lwrb_find(const lwrb_t* buff, const void* bts, lwrb_sz_t len, lwrb_sz_t start_of
 
     /* 最大循环次数为缓冲区满长度减去输入长度与起始偏移 */
     max_x = full - len;
-    for (lwrb_sz_t skip_x = start_offset; !found && skip_x <= max_x; ++skip_x) {
+    for (lwrb_sz_t skip_x = start_offset; !found && skip_x <= max_x; ++skip_x)
+    {
         found = 1; /* 默认先假定已找到 */
 
         /* 准备读取起点 */
         r_ptr = buff_r_ptr + skip_x;
-        if (r_ptr >= buff->size) {
+        if (r_ptr >= buff->size)
+        {
             r_ptr -= buff->size;
         }
 
         /* 在缓冲区中搜索 */
-        for (lwrb_sz_t idx = 0; idx < len; ++idx) {
-            if (buff->buff[r_ptr] != needle[idx]) {
+        for (lwrb_sz_t idx = 0; idx < len; ++idx)
+        {
+            if (buff->buff[r_ptr] != needle[idx])
+            {
                 found = 0;
                 break;
             }
-            if (++r_ptr >= buff->size) {
+            if (++r_ptr >= buff->size)
+            {
                 r_ptr = 0;
             }
         }
-        if (found) {
+        if (found)
+        {
             *found_idx = skip_x;
         }
     }

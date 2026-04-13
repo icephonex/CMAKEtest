@@ -3,7 +3,7 @@
 #include <string.h>
 
 /* 当前用于 AT 通道的串口句柄 */
-static UART_HandleTypeDef* s_at_uart = NULL;
+static UART_HandleTypeDef *s_at_uart = NULL;
 /* DMA 直接写入的原始接收缓存 */
 static uint8_t s_rx_dma_buffer[AT_SERVER_PORT_RX_DMA_BUFFER_SIZE];
 /* 提供给 lwrb 的底层存储区 */
@@ -12,14 +12,17 @@ static uint8_t s_ring_buffer_storage[AT_SERVER_PORT_RING_BUFFER_SIZE];
 static char s_line_buffer[AT_SERVER_PORT_LINE_BUFFER_SIZE];
 
 /* 通用层发送回调：统一从这里走串口发送 */
-static int AT_Server_Port_Write(const uint8_t* data, size_t len, void* context) {
-    UART_HandleTypeDef* huart = (UART_HandleTypeDef*)context;
+static int AT_Server_Port_Write(const uint8_t *data, size_t len, void *context)
+{
+    UART_HandleTypeDef *huart = (UART_HandleTypeDef *)context;
 
-    if ((huart == NULL) || (len == 0U) || (len > 0xFFFFU)) {
+    if ((huart == NULL) || (len == 0U) || (len > 0xFFFFU))
+    {
         return -1;
     }
 
-    if (HAL_UART_Transmit(huart, (uint8_t*)data, (uint16_t)len, 100U) != HAL_OK) {
+    if (HAL_UART_Transmit(huart, (uint8_t *)data, (uint16_t)len, 100U) != HAL_OK)
+    {
         return -1;
     }
 
@@ -27,7 +30,8 @@ static int AT_Server_Port_Write(const uint8_t* data, size_t len, void* context) 
 }
 
 /* 通用层获取时基回调：直接复用 HAL 毫秒节拍 */
-static uint32_t AT_Server_Port_GetTick(void* context) {
+static uint32_t AT_Server_Port_GetTick(void *context)
+{
     (void)context;
     return HAL_GetTick();
 }
@@ -47,7 +51,8 @@ static AT_Server_Config s_at_server_config = {
     .partial_timeout_ms = AT_SERVER_PORT_PARTIAL_TIMEOUT_MS,
 };
 
-void AT_Server_Port_Init(UART_HandleTypeDef* huart) {
+void AT_Server_Port_Init(UART_HandleTypeDef *huart)
+{
     /* 保存串口句柄，并把上下文透传给通用层回调 */
     s_at_uart = huart;
     s_at_server_config.write_context = huart;
@@ -63,7 +68,8 @@ void AT_Server_Port_Init(UART_HandleTypeDef* huart) {
     __HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
 
     /* 启动 DMA 循环接收，数据先进入 DMA 缓冲区 */
-    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK) {
+    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
+    {
         Error_Handler();
     }
 
@@ -71,15 +77,18 @@ void AT_Server_Port_Init(UART_HandleTypeDef* huart) {
     __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
 }
 
-const AT_Server_Config* AT_Server_Port_GetConfig(void) {
+const AT_Server_Config *AT_Server_Port_GetConfig(void)
+{
     return &s_at_server_config;
 }
 
-void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef* huart) {
+void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef *huart)
+{
     uint16_t remaining;
     uint16_t received;
 
-    if ((huart == NULL) || (huart != s_at_uart) || (huart->hdmarx == NULL)) {
+    if ((huart == NULL) || (huart != s_at_uart) || (huart->hdmarx == NULL))
+    {
         return;
     }
 
@@ -87,19 +96,22 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef* huart) {
     remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
 
     /* 停止 DMA，锁定当前这批数据长度 */
-    if (HAL_UART_DMAStop(huart) != HAL_OK) {
+    if (HAL_UART_DMAStop(huart) != HAL_OK)
+    {
         Error_Handler();
     }
 
     received = (uint16_t)(sizeof(s_rx_dma_buffer) - remaining);
-    if (received > 0U) {
+    if (received > 0U)
+    {
         /* 把本批数据整体写入通用层的环形缓冲区，后续由任务轮询解析 */
         (void)AT_Server_InputBytes(s_rx_dma_buffer, received);
     }
 
     /* 清空 DMA 临时缓冲区并重新开启下一轮接收 */
     memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
-    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK) {
+    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
+    {
         Error_Handler();
     }
 
@@ -107,7 +119,8 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef* huart) {
     __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
 }
 
-AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request* request, void* context) {
+AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, void *context)
+{
     /* 这里是项目业务适配层，后续可根据命令名和类型补充具体处理逻辑 */
     (void)request;
     (void)context;
