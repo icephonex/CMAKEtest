@@ -12,11 +12,11 @@ extern "C" {
  * @param text 待比较的文本起始地址。
  * @param text_len 待比较文本的长度。
  * @param literal 目标字面量字符串。
- * @param matched 输出比较结果，1 表示一致，0 表示不一致。
+ * @param matched 输出比较结果，APP_TRUE 表示一致，APP_FALSE 表示不一致。
  * @retval APP_STATUS_OK 表示执行完成。
  * @retval APP_STATUS_INVALID_ARG 表示输入参数无效。
  */
-APP_Status APP_Text_EqualsLiteral(const char *text, size_t text_len, const char *literal, uint8_t *matched);
+APP_Status APP_Text_EqualsLiteral(const char *text, size_t text_len, const char *literal, APP_Bool *matched);
 
 /**
  * @brief 将十进制字符串解析为有符号 32 位整数。

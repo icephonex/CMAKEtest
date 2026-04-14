@@ -28,20 +28,25 @@ static int32_t s_foc_vq_permille;
  * @brief 比较请求命令名是否与目标命令名一致。
  * @param request 当前解析出来的 AT 请求。
  * @param name 期望匹配的命令名。
- * @return 1 表示一致，0 表示不一致。
+ * @return APP_TRUE 表示一致，APP_FALSE 表示不一致。
  */
-static uint8_t AT_Server_Port_NameEquals(const AT_Server_Request *request, const char *name)
+static APP_Bool AT_Server_Port_NameEquals(const AT_Server_Request *request, const char *name)
 {
-    uint8_t matched = APP_FALSE;
+    APP_Bool matched = APP_FALSE;
+    APP_Status status = APP_STATUS_OK;
 
     if ((request == NULL) || (request->name == NULL) || (name == NULL))
     {
-        return APP_FALSE;
+        status = APP_STATUS_INVALID_ARG;
+    }
+    else
+    {
+        status = APP_Text_EqualsLiteral(request->name, request->name_len, name, &matched);
     }
 
-    if (APP_Text_EqualsLiteral(request->name, request->name_len, name, &matched) != APP_STATUS_OK)
+    if (status != APP_STATUS_OK)
     {
-        return APP_FALSE;
+        matched = APP_FALSE;
     }
 
     return matched;
@@ -54,14 +59,16 @@ static uint8_t AT_Server_Port_NameEquals(const AT_Server_Request *request, const
  */
 static APP_Status AT_Server_Port_WriteFocVector(void)
 {
+    APP_Status status = APP_STATUS_OK;
     char data[32];
 
-    if (APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_alpha_permille, s_foc_beta_permille) != APP_STATUS_OK)
+    status = APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_alpha_permille, s_foc_beta_permille);
+    if (status == APP_STATUS_OK)
     {
-        return APP_STATUS_RANGE;
+        status = AT_Server_WriteHeadData("FOCVAB", data);
     }
 
-    return AT_Server_WriteHeadData("FOCVAB", data);
+    return status;
 }
 
 /**
@@ -71,21 +78,26 @@ static APP_Status AT_Server_Port_WriteFocVector(void)
  */
 static APP_Status AT_Server_Port_WriteFocFrequency(void)
 {
+    APP_Status status = APP_STATUS_OK;
     char data[24];
     uint32_t frequency_millihz = 0U;
 
-    if (FOC_OpenLoop_GetFrequencyMilliHz(&frequency_millihz) != APP_STATUS_OK)
+    status = FOC_OpenLoop_GetFrequencyMilliHz(&frequency_millihz);
+    if (status != APP_STATUS_OK)
     {
-        return APP_STATUS_IO;
+        status = APP_STATUS_IO;
+    }
+    else
+    {
+        s_foc_freq_millihz = (int32_t)frequency_millihz;
+        status = APP_Text_FormatInt32(data, sizeof(data), s_foc_freq_millihz);
+        if (status == APP_STATUS_OK)
+        {
+            status = AT_Server_WriteHeadData("FOCFREQ", data);
+        }
     }
 
-    s_foc_freq_millihz = (int32_t)frequency_millihz;
-    if (APP_Text_FormatInt32(data, sizeof(data), s_foc_freq_millihz) != APP_STATUS_OK)
-    {
-        return APP_STATUS_RANGE;
-    }
-
-    return AT_Server_WriteHeadData("FOCFREQ", data);
+    return status;
 }
 
 /**
@@ -95,19 +107,24 @@ static APP_Status AT_Server_Port_WriteFocFrequency(void)
  */
 static APP_Status AT_Server_Port_WriteFocDQ(void)
 {
+    APP_Status status = APP_STATUS_OK;
     char data[32];
 
-    if (FOC_OpenLoop_GetVoltageDQPermille(&s_foc_vd_permille, &s_foc_vq_permille) != APP_STATUS_OK)
+    status = FOC_OpenLoop_GetVoltageDQPermille(&s_foc_vd_permille, &s_foc_vq_permille);
+    if (status != APP_STATUS_OK)
     {
-        return APP_STATUS_IO;
+        status = APP_STATUS_IO;
+    }
+    else
+    {
+        status = APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_vd_permille, s_foc_vq_permille);
+        if (status == APP_STATUS_OK)
+        {
+            status = AT_Server_WriteHeadData("FOCDQ", data);
+        }
     }
 
-    if (APP_Text_FormatInt32Pair(data, sizeof(data), s_foc_vd_permille, s_foc_vq_permille) != APP_STATUS_OK)
-    {
-        return APP_STATUS_RANGE;
-    }
-
-    return AT_Server_WriteHeadData("FOCDQ", data);
+    return status;
 }
 
 /**
@@ -118,36 +135,40 @@ static APP_Status AT_Server_Port_WriteFocDQ(void)
 static APP_Status AT_Server_Port_WriteFocState(void)
 {
     const FOC_ControlMode mode = FOC_OpenLoop_GetMode();
+    APP_Status status;
 
     if (mode == FOC_CONTROL_MODE_OPENLOOP)
     {
-        return AT_Server_WriteHeadData("FOCSTATE", "RUN");
+        status = AT_Server_WriteHeadData("FOCSTATE", "RUN");
     }
-
-    if (mode == FOC_CONTROL_MODE_STATIC_VECTOR)
+    else if (mode == FOC_CONTROL_MODE_STATIC_VECTOR)
     {
-        return AT_Server_WriteHeadData("FOCSTATE", "STATIC");
+        status = AT_Server_WriteHeadData("FOCSTATE", "STATIC");
+    }
+    else
+    {
+        status = AT_Server_WriteHeadData("FOCSTATE", "STOP");
     }
 
-    return AT_Server_WriteHeadData("FOCSTATE", "STOP");
+    return status;
 }
 
 /* 通用层发送回调：统一从这里走串口发送 */
 static APP_Status AT_Server_Port_Write(const uint8_t *data, size_t len, void *context)
 {
     UART_HandleTypeDef *huart = (UART_HandleTypeDef *)context;
+    APP_Status status = APP_STATUS_OK;
 
     if ((huart == NULL) || (len == 0U) || (len > 0xFFFFU))
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
     }
-
-    if (HAL_UART_Transmit(huart, (uint8_t *)data, (uint16_t)len, 100U) != HAL_OK)
+    else if (HAL_UART_Transmit(huart, (uint8_t *)data, (uint16_t)len, 100U) != HAL_OK)
     {
-        return APP_STATUS_HW_ERROR;
+        status = APP_STATUS_HW_ERROR;
     }
 
-    return APP_STATUS_OK;
+    return status;
 }
 
 /* 通用层获取时基回调：直接复用 HAL 毫秒节拍 */
@@ -174,53 +195,54 @@ static AT_Server_Config s_at_server_config = {
 
 APP_Status AT_Server_Port_Init(UART_HandleTypeDef *huart)
 {
-    APP_Status status;
+    APP_Status status = APP_STATUS_OK;
 
     if ((huart == NULL) || (huart->hdmarx == NULL))
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
     }
-
-    /* 保存串口句柄，并把上下文透传给通用层回调 */
-    s_at_uart = huart;
-    s_at_server_config.write_context = huart;
-    s_at_server_config.handle_context = huart;
-
-    /* 上电或重新初始化时先清空各级缓存 */
-    memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
-    memset(s_ring_buffer_storage, 0, sizeof(s_ring_buffer_storage));
-    memset(s_line_buffer, 0, sizeof(s_line_buffer));
-    s_foc_alpha_permille = 0;
-    s_foc_beta_permille = 0;
-    s_foc_freq_millihz = 5000;
-    s_foc_vd_permille = 0;
-    s_foc_vq_permille = 100;
-
-    status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)s_foc_freq_millihz);
-    if (status != APP_STATUS_OK)
+    else
     {
-        return status;
+        /* 保存串口句柄，并把上下文透传给通用层回调 */
+        s_at_uart = huart;
+        s_at_server_config.write_context = huart;
+        s_at_server_config.handle_context = huart;
+
+        /* 上电或重新初始化时先清空各级缓存 */
+        memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
+        memset(s_ring_buffer_storage, 0, sizeof(s_ring_buffer_storage));
+        memset(s_line_buffer, 0, sizeof(s_line_buffer));
+        s_foc_alpha_permille = 0;
+        s_foc_beta_permille = 0;
+        s_foc_freq_millihz = 5000;
+        s_foc_vd_permille = 0;
+        s_foc_vq_permille = 100;
+
+        status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)s_foc_freq_millihz);
+        if (status == APP_STATUS_OK)
+        {
+            status = FOC_OpenLoop_SetVoltageDQPermille(s_foc_vd_permille, s_foc_vq_permille);
+            if (status == APP_STATUS_OK)
+            {
+                /* 打开 UART 空闲中断，用于判定一批 DMA 数据接收结束 */
+                __HAL_UART_CLEAR_IDLEFLAG(huart);
+                __HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
+
+                /* 启动 DMA 循环接收，数据先进入 DMA 缓冲区 */
+                if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
+                {
+                    status = APP_STATUS_HW_ERROR;
+                }
+                else
+                {
+                    /* 本方案只关心空闲中断切包，不使用半传输中断 */
+                    __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+                }
+            }
+        }
     }
 
-    status = FOC_OpenLoop_SetVoltageDQPermille(s_foc_vd_permille, s_foc_vq_permille);
-    if (status != APP_STATUS_OK)
-    {
-        return status;
-    }
-
-    /* 打开 UART 空闲中断，用于判定一批 DMA 数据接收结束 */
-    __HAL_UART_CLEAR_IDLEFLAG(huart);
-    __HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
-
-    /* 启动 DMA 循环接收，数据先进入 DMA 缓冲区 */
-    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
-    {
-        return APP_STATUS_HW_ERROR;
-    }
-
-    /* 本方案只关心空闲中断切包，不使用半传输中断 */
-    __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
-    return APP_STATUS_OK;
+    return status;
 }
 
 const AT_Server_Config *AT_Server_Port_GetConfig(void)
@@ -232,156 +254,164 @@ void AT_Server_Port_HandleIdleIrq(UART_HandleTypeDef *huart)
 {
     uint16_t remaining;
     uint16_t received;
+    APP_Bool is_valid_irq = APP_FALSE;
 
     if ((huart == NULL) || (huart != s_at_uart) || (huart->hdmarx == NULL))
     {
-        return;
+        is_valid_irq = APP_FALSE;
     }
-
-    /* 先读取 DMA 剩余计数，计算本次空闲前一共收到多少字节 */
-    remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
-
-    /* 停止 DMA，锁定当前这批数据长度 */
-    if (HAL_UART_DMAStop(huart) != HAL_OK)
+    else
     {
-        return;
+        is_valid_irq = APP_TRUE;
     }
 
-    received = (uint16_t)(sizeof(s_rx_dma_buffer) - remaining);
-    if (received > 0U)
+    if (is_valid_irq != APP_FALSE)
     {
-        /* 把本批数据整体写入通用层的环形缓冲区，后续由任务轮询解析 */
-        (void)AT_Server_InputBytes(s_rx_dma_buffer, received);
-    }
+        /* 先读取 DMA 剩余计数，计算本次空闲前一共收到多少字节 */
+        remaining = (uint16_t)__HAL_DMA_GET_COUNTER(huart->hdmarx);
 
-    /* 清空 DMA 临时缓冲区并重新开启下一轮接收 */
-    memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
-    if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) != HAL_OK)
-    {
-        return;
-    }
+        /* 停止 DMA，锁定当前这批数据长度 */
+        if (HAL_UART_DMAStop(huart) == HAL_OK)
+        {
+            received = (uint16_t)(sizeof(s_rx_dma_buffer) - remaining);
+            if (received > 0U)
+            {
+                /* 把本批数据整体写入通用层的环形缓冲区，后续由任务轮询解析 */
+                (void)AT_Server_InputBytes(s_rx_dma_buffer, received);
+            }
 
-    /* 继续保持关闭半传输中断 */
-    __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+            /* 清空 DMA 临时缓冲区并重新开启下一轮接收 */
+            memset(s_rx_dma_buffer, 0, sizeof(s_rx_dma_buffer));
+            if (HAL_UART_Receive_DMA(huart, s_rx_dma_buffer, sizeof(s_rx_dma_buffer)) == HAL_OK)
+            {
+                /* 继续保持关闭半传输中断 */
+                __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+            }
+        }
+    }
 }
 
 AT_Server_HandlerResult AT_Server_Port_Handle(const AT_Server_Request *request, void *context)
 {
-    APP_Status status;
-    int32_t parsed_value;
-    int32_t first_value;
-    int32_t second_value;
+    APP_Status status = APP_STATUS_OK;
+    int32_t parsed_value = 0;
+    int32_t first_value = 0;
+    int32_t second_value = 0;
+    AT_Server_HandlerResult result = AT_SERVER_HANDLER_RESULT_UNSUPPORTED;
 
     (void)context;
 
     if (request == NULL)
     {
-        return AT_SERVER_HANDLER_RESULT_ERROR;
+        result = AT_SERVER_HANDLER_RESULT_ERROR;
     }
-
-    if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
-        (AT_Server_Port_NameEquals(request, "FOCSTART") != 0U))
+    else if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
+             (AT_Server_Port_NameEquals(request, "FOCSTART") != APP_FALSE))
     {
-        return (FOC_OpenLoop_RequestStart() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                              : AT_SERVER_HANDLER_RESULT_ERROR;
+        result = (FOC_OpenLoop_RequestStart() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                : AT_SERVER_HANDLER_RESULT_ERROR;
     }
-
-    if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
-        (AT_Server_Port_NameEquals(request, "FOCSTOP") != 0U))
+    else if ((request->type == AT_SERVER_COMMAND_TYPE_CMD) &&
+             (AT_Server_Port_NameEquals(request, "FOCSTOP") != APP_FALSE))
     {
-        return (FOC_OpenLoop_RequestStop() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                             : AT_SERVER_HANDLER_RESULT_ERROR;
+        result = (FOC_OpenLoop_RequestStop() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                               : AT_SERVER_HANDLER_RESULT_ERROR;
     }
-
-    if (AT_Server_Port_NameEquals(request, "FOCFREQ") != 0U)
+    else if (AT_Server_Port_NameEquals(request, "FOCFREQ") != APP_FALSE)
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
             status = APP_Text_ParseInt32(request->args, &parsed_value);
             if ((status != APP_STATUS_OK) || (parsed_value < 0))
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                result = AT_SERVER_HANDLER_RESULT_ERROR;
             }
-
-            status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)parsed_value);
-            if (status != APP_STATUS_OK)
+            else
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                status = FOC_OpenLoop_SetFrequencyMilliHz((uint32_t)parsed_value);
+                if (status != APP_STATUS_OK)
+                {
+                    result = AT_SERVER_HANDLER_RESULT_ERROR;
+                }
+                else
+                {
+                    s_foc_freq_millihz = parsed_value;
+                    result = AT_SERVER_HANDLER_RESULT_OK;
+                }
             }
-
-            s_foc_freq_millihz = parsed_value;
-            return AT_SERVER_HANDLER_RESULT_OK;
         }
-
-        if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
+        else if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            return (AT_Server_Port_WriteFocFrequency() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                          : AT_SERVER_HANDLER_RESULT_ERROR;
+            result = (AT_Server_Port_WriteFocFrequency() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                            : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
-
-    if (AT_Server_Port_NameEquals(request, "FOCDQ") != 0U)
+    else if (AT_Server_Port_NameEquals(request, "FOCDQ") != APP_FALSE)
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
             status = APP_Text_ParseInt32Pair(request->args, &first_value, &second_value);
             if (status != APP_STATUS_OK)
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                result = AT_SERVER_HANDLER_RESULT_ERROR;
             }
-
-            status = FOC_OpenLoop_SetVoltageDQPermille(first_value, second_value);
-            if (status != APP_STATUS_OK)
+            else
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                status = FOC_OpenLoop_SetVoltageDQPermille(first_value, second_value);
+                if (status != APP_STATUS_OK)
+                {
+                    result = AT_SERVER_HANDLER_RESULT_ERROR;
+                }
+                else
+                {
+                    s_foc_vd_permille = first_value;
+                    s_foc_vq_permille = second_value;
+                    result = AT_SERVER_HANDLER_RESULT_OK;
+                }
             }
-
-            s_foc_vd_permille = first_value;
-            s_foc_vq_permille = second_value;
-            return AT_SERVER_HANDLER_RESULT_OK;
         }
-
-        if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
+        else if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            return (AT_Server_Port_WriteFocDQ() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                   : AT_SERVER_HANDLER_RESULT_ERROR;
+            result = (AT_Server_Port_WriteFocDQ() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                     : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
-
-    if (AT_Server_Port_NameEquals(request, "FOCVAB") != 0U)
+    else if (AT_Server_Port_NameEquals(request, "FOCVAB") != APP_FALSE)
     {
         if (request->type == AT_SERVER_COMMAND_TYPE_SETUP)
         {
             status = APP_Text_ParseInt32Pair(request->args, &first_value, &second_value);
             if (status != APP_STATUS_OK)
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                result = AT_SERVER_HANDLER_RESULT_ERROR;
             }
-
-            status = FOC_OpenLoop_SetStaticVectorPermille(first_value, second_value);
-            if (status != APP_STATUS_OK)
+            else
             {
-                return AT_SERVER_HANDLER_RESULT_ERROR;
+                status = FOC_OpenLoop_SetStaticVectorPermille(first_value, second_value);
+                if (status != APP_STATUS_OK)
+                {
+                    result = AT_SERVER_HANDLER_RESULT_ERROR;
+                }
+                else
+                {
+                    s_foc_alpha_permille = first_value;
+                    s_foc_beta_permille = second_value;
+                    result = AT_SERVER_HANDLER_RESULT_OK;
+                }
             }
-
-            s_foc_alpha_permille = first_value;
-            s_foc_beta_permille = second_value;
-            return AT_SERVER_HANDLER_RESULT_OK;
         }
-
-        if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
+        else if (request->type == AT_SERVER_COMMAND_TYPE_QUERY)
         {
-            return (AT_Server_Port_WriteFocVector() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                       : AT_SERVER_HANDLER_RESULT_ERROR;
+            result = (AT_Server_Port_WriteFocVector() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                         : AT_SERVER_HANDLER_RESULT_ERROR;
         }
     }
-
-    if ((request->type == AT_SERVER_COMMAND_TYPE_QUERY) &&
-        (AT_Server_Port_NameEquals(request, "FOCSTATE") != 0U))
+    else if ((request->type == AT_SERVER_COMMAND_TYPE_QUERY) &&
+             (AT_Server_Port_NameEquals(request, "FOCSTATE") != APP_FALSE))
     {
-        return (AT_Server_Port_WriteFocState() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
-                                                                  : AT_SERVER_HANDLER_RESULT_ERROR;
+        result = (AT_Server_Port_WriteFocState() == APP_STATUS_OK) ? AT_SERVER_HANDLER_RESULT_OK
+                                                                    : AT_SERVER_HANDLER_RESULT_ERROR;
     }
 
-    return AT_SERVER_HANDLER_RESULT_UNSUPPORTED;
+    return result;
 }

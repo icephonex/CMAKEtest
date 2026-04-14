@@ -1,22 +1,22 @@
 #include "lfs_port.h"
 
-#include <stdbool.h>
 #include <string.h>
 
+#include "app_base.h"
 #include "main.h"
 #include "spi_flash.h"
 
 static int lfs_port_bd_read(const struct lfs_config *c, lfs_block_t block,
-        lfs_off_t off, void *buffer, lfs_size_t size);
+                            lfs_off_t off, void *buffer, lfs_size_t size);
 static int lfs_port_bd_prog(const struct lfs_config *c, lfs_block_t block,
-        lfs_off_t off, const void *buffer, lfs_size_t size);
+                            lfs_off_t off, const void *buffer, lfs_size_t size);
 static int lfs_port_bd_erase(const struct lfs_config *c, lfs_block_t block);
 static int lfs_port_bd_sync(const struct lfs_config *c);
 
 static int lfs_port_ensure_ready(void);
 static void lfs_port_reset_fs(void);
-static bool lfs_port_is_range_valid(lfs_block_t block, lfs_off_t off,
-        lfs_size_t size);
+static APP_Bool lfs_port_is_range_valid(lfs_block_t block, lfs_off_t off,
+                                        lfs_size_t size);
 static uint32_t lfs_port_block_address(lfs_block_t block, lfs_off_t off);
 
 static uint8_t s_lfs_read_buffer[LFS_PORT_CACHE_SIZE];
@@ -24,8 +24,8 @@ static uint8_t s_lfs_prog_buffer[LFS_PORT_CACHE_SIZE];
 static uint8_t s_lfs_lookahead_buffer[LFS_PORT_LOOKAHEAD_SIZE];
 
 static lfs_t s_lfs;
-static bool s_lfs_flash_ready;
-static bool s_lfs_mounted;
+static APP_Bool s_lfs_flash_ready;
+static APP_Bool s_lfs_mounted;
 
 extern SPI_HandleTypeDef hspi2;
 
@@ -80,33 +80,35 @@ int lfs_port_flash_sync(void)
 
 int lfs_port_init(void)
 {
-    if (s_lfs_flash_ready) {
-        return 0;
+    int status = 0;
+
+    if (s_lfs_flash_ready == APP_FALSE)
+    {
+        if (lfs_port_flash_init() != 0)
+        {
+            status = LFS_ERR_IO;
+        }
+        else
+        {
+            s_lfs_flash_ready = APP_TRUE;
+        }
     }
 
-    if (lfs_port_flash_init() != 0) {
-        return LFS_ERR_IO;
-    }
-
-    s_lfs_flash_ready = true;
-    return 0;
+    return status;
 }
 
 int lfs_port_mount(void)
 {
     int err = lfs_port_ensure_ready();
-    if (err != 0) {
-        return err;
-    }
 
-    if (s_lfs_mounted) {
-        return 0;
-    }
-
-    lfs_port_reset_fs();
-    err = lfs_mount(&s_lfs, &s_lfs_cfg);
-    if (err == 0) {
-        s_lfs_mounted = true;
+    if ((err == 0) && (s_lfs_mounted == APP_FALSE))
+    {
+        lfs_port_reset_fs();
+        err = lfs_mount(&s_lfs, &s_lfs_cfg);
+        if (err == 0)
+        {
+            s_lfs_mounted = APP_TRUE;
+        }
     }
 
     return err;
@@ -115,53 +117,53 @@ int lfs_port_mount(void)
 int lfs_port_format(void)
 {
     int err = lfs_port_ensure_ready();
-    if (err != 0) {
-        return err;
-    }
 
-    if (s_lfs_mounted) {
+    if ((err == 0) && (s_lfs_mounted != APP_FALSE))
+    {
         err = lfs_unmount(&s_lfs);
-        if (err != 0) {
-            return err;
+        if (err == 0)
+        {
+            s_lfs_mounted = APP_FALSE;
         }
-        s_lfs_mounted = false;
     }
 
-    lfs_port_reset_fs();
-    return lfs_format(&s_lfs, &s_lfs_cfg);
+    if (err == 0)
+    {
+        lfs_port_reset_fs();
+        err = lfs_format(&s_lfs, &s_lfs_cfg);
+    }
+
+    return err;
 }
 
 int lfs_port_mount_or_format(void)
 {
     int err = lfs_port_mount();
-    if (err == 0) {
-        return 0;
+    
+    if (err == LFS_ERR_CORRUPT)
+    {
+        err = lfs_port_format();
+        if (err == 0)
+        {
+            err = lfs_port_mount();
+        }
     }
 
-    if (err != LFS_ERR_CORRUPT) {
-        return err;
-    }
-
-    err = lfs_port_format();
-    if (err != 0) {
-        return err;
-    }
-
-    return lfs_port_mount();
+    return err;
 }
 
 int lfs_port_unmount(void)
 {
-    int err;
+    int err = 0;
 
-    if (!s_lfs_mounted) {
-        return 0;
-    }
-
-    err = lfs_unmount(&s_lfs);
-    if (err == 0) {
-        s_lfs_mounted = false;
-        lfs_port_reset_fs();
+    if (s_lfs_mounted != APP_FALSE)
+    {
+        err = lfs_unmount(&s_lfs);
+        if (err == 0)
+        {
+            s_lfs_mounted = APP_FALSE;
+            lfs_port_reset_fs();
+        }
     }
 
     return err;
@@ -178,79 +180,100 @@ const struct lfs_config *lfs_port_cfg(void)
 }
 
 static int lfs_port_bd_read(const struct lfs_config *c, lfs_block_t block,
-        lfs_off_t off, void *buffer, lfs_size_t size)
+                            lfs_off_t off, void *buffer, lfs_size_t size)
 {
     uint32_t address;
+    int err = 0;
 
     (void)c;
 
-    if (!lfs_port_is_range_valid(block, off, size)) {
-        return LFS_ERR_INVAL;
+    if (lfs_port_is_range_valid(block, off, size) == APP_FALSE)
+    {
+        err = LFS_ERR_INVAL;
+    }
+    else
+    {
+        address = lfs_port_block_address(block, off);
+        if (lfs_port_flash_read(address, buffer, size) != 0)
+        {
+            err = LFS_ERR_IO;
+        }
     }
 
-    address = lfs_port_block_address(block, off);
-    if (lfs_port_flash_read(address, buffer, size) != 0) {
-        return LFS_ERR_IO;
-    }
-
-    return 0;
+    return err;
 }
 
 static int lfs_port_bd_prog(const struct lfs_config *c, lfs_block_t block,
-        lfs_off_t off, const void *buffer, lfs_size_t size)
+                            lfs_off_t off, const void *buffer, lfs_size_t size)
 {
     uint32_t address;
+    int err = 0;
 
     (void)c;
 
-    if (!lfs_port_is_range_valid(block, off, size)) {
-        return LFS_ERR_INVAL;
+    if (lfs_port_is_range_valid(block, off, size) == APP_FALSE)
+    {
+        err = LFS_ERR_INVAL;
+    }
+    else
+    {
+        address = lfs_port_block_address(block, off);
+        if (lfs_port_flash_prog(address, buffer, size) != 0)
+        {
+            err = LFS_ERR_IO;
+        }
     }
 
-    address = lfs_port_block_address(block, off);
-    if (lfs_port_flash_prog(address, buffer, size) != 0) {
-        return LFS_ERR_IO;
-    }
-
-    return 0;
+    return err;
 }
 
 static int lfs_port_bd_erase(const struct lfs_config *c, lfs_block_t block)
 {
     uint32_t address;
+    int err = 0;
 
     (void)c;
 
-    if (block >= (lfs_block_t)LFS_PORT_BLOCK_COUNT) {
-        return LFS_ERR_INVAL;
+    if (block >= (lfs_block_t)LFS_PORT_BLOCK_COUNT)
+    {
+        err = LFS_ERR_INVAL;
+    }
+    else
+    {
+        address = lfs_port_block_address(block, 0U);
+        if (lfs_port_flash_erase(address, LFS_PORT_BLOCK_SIZE) != 0)
+        {
+            err = LFS_ERR_IO;
+        }
     }
 
-    address = lfs_port_block_address(block, 0u);
-    if (lfs_port_flash_erase(address, LFS_PORT_BLOCK_SIZE) != 0) {
-        return LFS_ERR_IO;
-    }
-
-    return 0;
+    return err;
 }
 
 static int lfs_port_bd_sync(const struct lfs_config *c)
 {
+    int err = 0;
+
     (void)c;
 
-    if (lfs_port_flash_sync() != 0) {
-        return LFS_ERR_IO;
+    if (lfs_port_flash_sync() != 0)
+    {
+        err = LFS_ERR_IO;
     }
 
-    return 0;
+    return err;
 }
 
 static int lfs_port_ensure_ready(void)
 {
-    if (s_lfs_flash_ready) {
-        return 0;
+    int err = 0;
+
+    if (s_lfs_flash_ready == APP_FALSE)
+    {
+        err = lfs_port_init();
     }
 
-    return lfs_port_init();
+    return err;
 }
 
 static void lfs_port_reset_fs(void)
@@ -258,27 +281,28 @@ static void lfs_port_reset_fs(void)
     (void)memset(&s_lfs, 0, sizeof(s_lfs));
 }
 
-static bool lfs_port_is_range_valid(lfs_block_t block, lfs_off_t off,
-        lfs_size_t size)
+static APP_Bool lfs_port_is_range_valid(lfs_block_t block, lfs_off_t off,
+                                        lfs_size_t size)
 {
-    if (block >= (lfs_block_t)LFS_PORT_BLOCK_COUNT) {
-        return false;
+    APP_Bool is_valid = APP_TRUE;
+
+    if (block >= (lfs_block_t)LFS_PORT_BLOCK_COUNT)
+    {
+        is_valid = APP_FALSE;
+    }
+    else if (off > (lfs_off_t)LFS_PORT_BLOCK_SIZE)
+    {
+        is_valid = APP_FALSE;
+    }
+    else if (size > (lfs_size_t)(LFS_PORT_BLOCK_SIZE - off))
+    {
+        is_valid = APP_FALSE;
     }
 
-    if (off > (lfs_off_t)LFS_PORT_BLOCK_SIZE) {
-        return false;
-    }
-
-    if (size > (lfs_size_t)(LFS_PORT_BLOCK_SIZE - off)) {
-        return false;
-    }
-
-    return true;
+    return is_valid;
 }
 
 static uint32_t lfs_port_block_address(lfs_block_t block, lfs_off_t off)
 {
-    return (uint32_t)LFS_PORT_FLASH_BASE_OFFSET
-        + ((uint32_t)block * (uint32_t)LFS_PORT_BLOCK_SIZE)
-        + (uint32_t)off;
+    return (uint32_t)LFS_PORT_FLASH_BASE_OFFSET + ((uint32_t)block * (uint32_t)LFS_PORT_BLOCK_SIZE) + (uint32_t)off;
 }

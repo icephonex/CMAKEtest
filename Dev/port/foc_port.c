@@ -9,8 +9,8 @@
 typedef struct
 {
     FOC_Port_Config config;
-    uint8_t ready;
-    uint8_t started;
+    APP_Bool ready;
+    APP_Bool started;
 } FOC_Port_State;
 
 static FOC_Port_State s_foc_port;
@@ -22,17 +22,18 @@ static FOC_Port_State s_foc_port;
  */
 static float FOC_Port_ClampDuty(float duty)
 {
+    float clamped_duty = duty;
+
     if (duty < 0.0f)
     {
-        return 0.0f;
+        clamped_duty = 0.0f;
     }
-
-    if (duty > 1.0f)
+    else if (duty > 1.0f)
     {
-        return 1.0f;
+        clamped_duty = 1.0f;
     }
 
-    return duty;
+    return clamped_duty;
 }
 
 /**
@@ -68,18 +69,19 @@ static uint32_t FOC_Port_DutyToCompare(float duty)
  */
 static APP_Status FOC_Port_StartChannelPair(uint32_t channel)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if (HAL_TIM_PWM_Start(s_foc_port.config.timer, channel) != HAL_OK)
     {
-        return APP_STATUS_HW_ERROR;
+        status = APP_STATUS_HW_ERROR;
     }
-
-    if (HAL_TIMEx_PWMN_Start(s_foc_port.config.timer, channel) != HAL_OK)
+    else if (HAL_TIMEx_PWMN_Start(s_foc_port.config.timer, channel) != HAL_OK)
     {
         (void)HAL_TIM_PWM_Stop(s_foc_port.config.timer, channel);
-        return APP_STATUS_HW_ERROR;
+        status = APP_STATUS_HW_ERROR;
     }
 
-    return APP_STATUS_OK;
+    return status;
 }
 
 /**
@@ -107,56 +109,58 @@ static APP_Status FOC_Port_StopChannelPair(uint32_t channel)
 
 APP_Status FOC_Port_Init(const FOC_Port_Config *config)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if ((config == NULL) || (config->timer == NULL))
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
+    }
+    else
+    {
+        s_foc_port.config = *config;
+        s_foc_port.ready = APP_TRUE;
+        s_foc_port.started = APP_FALSE;
+        FOC_Port_ClearCompare();
     }
 
-    s_foc_port.config = *config;
-    s_foc_port.ready = APP_TRUE;
-    s_foc_port.started = APP_FALSE;
-    FOC_Port_ClearCompare();
-
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_Port_StartPwm(void)
 {
-    APP_Status status;
+    APP_Status status = APP_STATUS_OK;
 
     if (s_foc_port.ready == APP_FALSE)
     {
-        return APP_STATUS_NOT_READY;
+        status = APP_STATUS_NOT_READY;
     }
-
-    if (s_foc_port.started != APP_FALSE)
+    else if (s_foc_port.started == APP_FALSE)
     {
-        return APP_STATUS_OK;
+        status = FOC_Port_StartChannelPair(s_foc_port.config.channel_u);
+        if (status == APP_STATUS_OK)
+        {
+            status = FOC_Port_StartChannelPair(s_foc_port.config.channel_v);
+            if (status != APP_STATUS_OK)
+            {
+                (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_u);
+            }
+            else
+            {
+                status = FOC_Port_StartChannelPair(s_foc_port.config.channel_w);
+                if (status != APP_STATUS_OK)
+                {
+                    (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_u);
+                    (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_v);
+                }
+                else
+                {
+                    s_foc_port.started = APP_TRUE;
+                }
+            }
+        }
     }
 
-    status = FOC_Port_StartChannelPair(s_foc_port.config.channel_u);
-    if (status != APP_STATUS_OK)
-    {
-        return status;
-    }
-
-    status = FOC_Port_StartChannelPair(s_foc_port.config.channel_v);
-    if (status != APP_STATUS_OK)
-    {
-        (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_u);
-        return status;
-    }
-
-    status = FOC_Port_StartChannelPair(s_foc_port.config.channel_w);
-    if (status != APP_STATUS_OK)
-    {
-        (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_u);
-        (void)FOC_Port_StopChannelPair(s_foc_port.config.channel_v);
-        return status;
-    }
-
-    s_foc_port.started = APP_TRUE;
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_Port_StopPwm(void)
@@ -165,45 +169,50 @@ APP_Status FOC_Port_StopPwm(void)
 
     if (s_foc_port.ready == APP_FALSE)
     {
-        return APP_STATUS_NOT_READY;
+        status = APP_STATUS_NOT_READY;
     }
+    else
+    {
+        if (FOC_Port_StopChannelPair(s_foc_port.config.channel_u) != APP_STATUS_OK)
+        {
+            status = APP_STATUS_HW_ERROR;
+        }
+        if (FOC_Port_StopChannelPair(s_foc_port.config.channel_v) != APP_STATUS_OK)
+        {
+            status = APP_STATUS_HW_ERROR;
+        }
+        if (FOC_Port_StopChannelPair(s_foc_port.config.channel_w) != APP_STATUS_OK)
+        {
+            status = APP_STATUS_HW_ERROR;
+        }
 
-    if (FOC_Port_StopChannelPair(s_foc_port.config.channel_u) != APP_STATUS_OK)
-    {
-        status = APP_STATUS_HW_ERROR;
+        FOC_Port_ClearCompare();
+        s_foc_port.started = APP_FALSE;
     }
-    if (FOC_Port_StopChannelPair(s_foc_port.config.channel_v) != APP_STATUS_OK)
-    {
-        status = APP_STATUS_HW_ERROR;
-    }
-    if (FOC_Port_StopChannelPair(s_foc_port.config.channel_w) != APP_STATUS_OK)
-    {
-        status = APP_STATUS_HW_ERROR;
-    }
-
-    FOC_Port_ClearCompare();
-    s_foc_port.started = APP_FALSE;
 
     return status;
 }
 
 APP_Status FOC_Port_SetDuty(const FOC_Duty *duty)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if (s_foc_port.ready == APP_FALSE)
     {
-        return APP_STATUS_NOT_READY;
+        status = APP_STATUS_NOT_READY;
     }
-
-    if (duty == NULL)
+    else if (duty == NULL)
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
+    }
+    else
+    {
+        __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_u, FOC_Port_DutyToCompare(duty->phase_u));
+        __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_v, FOC_Port_DutyToCompare(duty->phase_v));
+        __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_w, FOC_Port_DutyToCompare(duty->phase_w));
     }
 
-    __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_u, FOC_Port_DutyToCompare(duty->phase_u));
-    __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_v, FOC_Port_DutyToCompare(duty->phase_v));
-    __HAL_TIM_SET_COMPARE(s_foc_port.config.timer, s_foc_port.config.channel_w, FOC_Port_DutyToCompare(duty->phase_w));
-
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_Port_OutputAlphaBeta(FOC_AlphaBeta v_ab)

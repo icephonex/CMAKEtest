@@ -8,6 +8,8 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+typedef uint8_t APP_Bool;
+
 typedef enum
 {
     APP_STATUS_OK = 0,
@@ -19,8 +21,8 @@ typedef enum
     APP_STATUS_HW_ERROR = 6
 } APP_Status;
 
-#define APP_TRUE    (1U)
-#define APP_FALSE   (0U)
+#define APP_TRUE    ((APP_Bool)1U)
+#define APP_FALSE   ((APP_Bool)0U)
 
 #ifdef __cplusplus
 }

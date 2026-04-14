@@ -27,7 +27,7 @@ typedef struct
     int32_t vq_permille;
     int32_t alpha_permille;
     int32_t beta_permille;
-    uint8_t pwm_started;
+    APP_Bool pwm_started;
 } FOC_OpenLoop_State;
 
 static volatile FOC_OpenLoop_State s_foc_openloop;
@@ -42,12 +42,14 @@ static volatile FOC_OpenLoop_State s_foc_openloop;
  */
 static APP_Status FOC_OpenLoop_CheckRange(int32_t value, int32_t min_value, int32_t max_value)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if ((value < min_value) || (value > max_value))
     {
-        return APP_STATUS_RANGE;
+        status = APP_STATUS_RANGE;
     }
 
-    return APP_STATUS_OK;
+    return status;
 }
 
 /**
@@ -133,17 +135,15 @@ static APP_Status FOC_OpenLoop_UpdateStaticVectorOutput(void)
  */
 static APP_Status FOC_OpenLoop_StartPwmIfNeeded(void)
 {
-    APP_Status status;
+    APP_Status status = APP_STATUS_OK;
 
-    if (s_foc_openloop.pwm_started != APP_FALSE)
+    if (s_foc_openloop.pwm_started == APP_FALSE)
     {
-        return APP_STATUS_OK;
-    }
-
-    status = FOC_Port_StartPwm();
-    if (status == APP_STATUS_OK)
-    {
-        s_foc_openloop.pwm_started = APP_TRUE;
+        status = FOC_Port_StartPwm();
+        if (status == APP_STATUS_OK)
+        {
+            s_foc_openloop.pwm_started = APP_TRUE;
+        }
     }
 
     return status;
@@ -247,13 +247,18 @@ APP_Status FOC_OpenLoop_RequestStop(void)
 
 APP_Status FOC_OpenLoop_SetFrequencyMilliHz(uint32_t frequency_millihz)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if (frequency_millihz > FOC_OPENLOOP_MAX_FREQ_MHZ)
     {
-        return APP_STATUS_RANGE;
+        status = APP_STATUS_RANGE;
+    }
+    else
+    {
+        s_foc_openloop.frequency_millihz = frequency_millihz;
     }
 
-    s_foc_openloop.frequency_millihz = frequency_millihz;
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_OpenLoop_SetVoltageDQPermille(int32_t vd_permille, int32_t vq_permille)
@@ -261,20 +266,17 @@ APP_Status FOC_OpenLoop_SetVoltageDQPermille(int32_t vd_permille, int32_t vq_per
     APP_Status status;
 
     status = FOC_OpenLoop_CheckRange(vd_permille, -FOC_OPENLOOP_MAX_VOLTAGE_PM, FOC_OPENLOOP_MAX_VOLTAGE_PM);
-    if (status != APP_STATUS_OK)
+    if (status == APP_STATUS_OK)
     {
-        return status;
+        status = FOC_OpenLoop_CheckRange(vq_permille, -FOC_OPENLOOP_MAX_VOLTAGE_PM, FOC_OPENLOOP_MAX_VOLTAGE_PM);
+        if (status == APP_STATUS_OK)
+        {
+            s_foc_openloop.vd_permille = vd_permille;
+            s_foc_openloop.vq_permille = vq_permille;
+        }
     }
 
-    status = FOC_OpenLoop_CheckRange(vq_permille, -FOC_OPENLOOP_MAX_VOLTAGE_PM, FOC_OPENLOOP_MAX_VOLTAGE_PM);
-    if (status != APP_STATUS_OK)
-    {
-        return status;
-    }
-
-    s_foc_openloop.vd_permille = vd_permille;
-    s_foc_openloop.vq_permille = vq_permille;
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_OpenLoop_SetStaticVectorPermille(int32_t alpha_permille, int32_t beta_permille)
@@ -282,46 +284,51 @@ APP_Status FOC_OpenLoop_SetStaticVectorPermille(int32_t alpha_permille, int32_t 
     APP_Status status;
 
     status = FOC_OpenLoop_CheckRange(alpha_permille, -FOC_OPENLOOP_MAX_VECTOR_PM, FOC_OPENLOOP_MAX_VECTOR_PM);
-    if (status != APP_STATUS_OK)
+    if (status == APP_STATUS_OK)
     {
-        return status;
+        status = FOC_OpenLoop_CheckRange(beta_permille, -FOC_OPENLOOP_MAX_VECTOR_PM, FOC_OPENLOOP_MAX_VECTOR_PM);
+        if (status == APP_STATUS_OK)
+        {
+            s_foc_openloop.alpha_permille = alpha_permille;
+            s_foc_openloop.beta_permille = beta_permille;
+            s_foc_openloop.mode = FOC_CONTROL_MODE_STATIC_VECTOR;
+        }
     }
 
-    status = FOC_OpenLoop_CheckRange(beta_permille, -FOC_OPENLOOP_MAX_VECTOR_PM, FOC_OPENLOOP_MAX_VECTOR_PM);
-    if (status != APP_STATUS_OK)
-    {
-        return status;
-    }
-
-    s_foc_openloop.alpha_permille = alpha_permille;
-    s_foc_openloop.beta_permille = beta_permille;
-    s_foc_openloop.mode = FOC_CONTROL_MODE_STATIC_VECTOR;
-
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_OpenLoop_GetFrequencyMilliHz(uint32_t *frequency_millihz)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if (frequency_millihz == NULL)
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
+    }
+    else
+    {
+        *frequency_millihz = s_foc_openloop.frequency_millihz;
     }
 
-    *frequency_millihz = s_foc_openloop.frequency_millihz;
-    return APP_STATUS_OK;
+    return status;
 }
 
 APP_Status FOC_OpenLoop_GetVoltageDQPermille(int32_t *vd_permille, int32_t *vq_permille)
 {
+    APP_Status status = APP_STATUS_OK;
+
     if ((vd_permille == NULL) || (vq_permille == NULL))
     {
-        return APP_STATUS_INVALID_ARG;
+        status = APP_STATUS_INVALID_ARG;
+    }
+    else
+    {
+        *vd_permille = s_foc_openloop.vd_permille;
+        *vq_permille = s_foc_openloop.vq_permille;
     }
 
-    *vd_permille = s_foc_openloop.vd_permille;
-    *vq_permille = s_foc_openloop.vq_permille;
-
-    return APP_STATUS_OK;
+    return status;
 }
 
 FOC_ControlMode FOC_OpenLoop_GetMode(void)

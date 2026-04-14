@@ -10,17 +10,18 @@
 /* 将浮点值限制到指定区间，避免异常值直接进入 PWM 输出 */
 static float FOC_Clamp(float value, float min_value, float max_value)
 {
+    float clamped_value = value;
+
     if (value < min_value)
     {
-        return min_value;
+        clamped_value = min_value;
     }
-
-    if (value > max_value)
+    else if (value > max_value)
     {
-        return max_value;
+        clamped_value = max_value;
     }
 
-    return value;
+    return clamped_value;
 }
 
 /* 求三个浮点量中的最大值，用于后续公共模式电压注入 */
@@ -90,8 +91,8 @@ FOC_AlphaBeta FOC_InvPark(FOC_DQ dq, float sin_theta, float cos_theta)
 
 FOC_AlphaBeta FOC_LimitAlphaBeta(FOC_AlphaBeta v_ab, float max_magnitude)
 {
-    float magnitude;
-    float scale;
+    float magnitude = FOC_ZERO;
+    float scale = FOC_ZERO;
     FOC_AlphaBeta limited;
 
     limited = v_ab;
@@ -100,18 +101,17 @@ FOC_AlphaBeta FOC_LimitAlphaBeta(FOC_AlphaBeta v_ab, float max_magnitude)
     {
         limited.alpha = FOC_ZERO;
         limited.beta = FOC_ZERO;
-        return limited;
     }
-
-    magnitude = sqrtf((limited.alpha * limited.alpha) + (limited.beta * limited.beta));
-    if (magnitude <= max_magnitude)
+    else
     {
-        return limited;
+        magnitude = sqrtf((limited.alpha * limited.alpha) + (limited.beta * limited.beta));
+        if (magnitude > max_magnitude)
+        {
+            scale = max_magnitude / magnitude;
+            limited.alpha *= scale;
+            limited.beta *= scale;
+        }
     }
-
-    scale = max_magnitude / magnitude;
-    limited.alpha *= scale;
-    limited.beta *= scale;
 
     return limited;
 }
