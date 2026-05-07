@@ -304,5 +304,5 @@ static APP_Bool lfs_port_is_range_valid(lfs_block_t block, lfs_off_t off,
 
 static uint32_t lfs_port_block_address(lfs_block_t block, lfs_off_t off)
 {
-    return (uint32_t)LFS_PORT_FLASH_BASE_OFFSET + ((uint32_t)block * (uint32_t)LFS_PORT_BLOCK_SIZE) + (uint32_t)off;
+    return (uint32_t)LFS_PORT_FLASH_BASE_OFFSET + ((uint32_t)block << LFS_PORT_BLOCK_SIZE_SHIFT) + (uint32_t)off;
 }

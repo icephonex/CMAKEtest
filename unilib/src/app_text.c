@@ -8,6 +8,12 @@
 #define APP_TEXT_POSITIVE_SIGN             ('+')
 #define APP_TEXT_COMMA                     (',')
 #define APP_TEXT_NUMERIC_STRING_MAX_LEN    (12U)
+#define APP_TEXT_INT32_MAX_MAGNITUDE       ((int64_t)INT32_MAX)
+#define APP_TEXT_INT32_MIN_MAGNITUDE       (((int64_t)INT32_MAX) + 1LL)
+#define APP_TEXT_INT32_MAX_DIV_BASE        (APP_TEXT_INT32_MAX_MAGNITUDE / APP_TEXT_DECIMAL_BASE)
+#define APP_TEXT_INT32_MAX_MOD_BASE        (APP_TEXT_INT32_MAX_MAGNITUDE % APP_TEXT_DECIMAL_BASE)
+#define APP_TEXT_INT32_MIN_DIV_BASE        (APP_TEXT_INT32_MIN_MAGNITUDE / APP_TEXT_DECIMAL_BASE)
+#define APP_TEXT_INT32_MIN_MOD_BASE        (APP_TEXT_INT32_MIN_MAGNITUDE % APP_TEXT_DECIMAL_BASE)
 
 /**
  * @brief 计算以 '\0' 结束的字符串长度。
@@ -106,7 +112,8 @@ APP_Status APP_Text_ParseInt32(const char *text, int32_t *value)
 {
     APP_Status status = APP_STATUS_OK;
     int64_t magnitude = 0LL;
-    int64_t limit = (int64_t)INT32_MAX;
+    int64_t limit_div_base = APP_TEXT_INT32_MAX_DIV_BASE;
+    int64_t limit_mod_base = APP_TEXT_INT32_MAX_MOD_BASE;
     int32_t sign = 1;
     size_t index = 0U;
 
@@ -119,7 +126,8 @@ APP_Status APP_Text_ParseInt32(const char *text, int32_t *value)
         if (text[index] == APP_TEXT_NEGATIVE_SIGN)
         {
             sign = -1;
-            limit = (int64_t)INT32_MAX + 1LL;
+            limit_div_base = APP_TEXT_INT32_MIN_DIV_BASE;
+            limit_mod_base = APP_TEXT_INT32_MIN_MOD_BASE;
             index++;
         }
         else if (text[index] == APP_TEXT_POSITIVE_SIGN)
@@ -141,9 +149,8 @@ APP_Status APP_Text_ParseInt32(const char *text, int32_t *value)
             {
                 status = APP_STATUS_INVALID_ARG;
             }
-            else if ((magnitude > (limit / APP_TEXT_DECIMAL_BASE)) ||
-                     ((magnitude == (limit / APP_TEXT_DECIMAL_BASE)) &&
-                      (digit > (limit % APP_TEXT_DECIMAL_BASE))))
+            else if ((magnitude > limit_div_base) ||
+                     ((magnitude == limit_div_base) && (digit > limit_mod_base)))
             {
                 status = APP_STATUS_RANGE;
             }
@@ -158,7 +165,7 @@ APP_Status APP_Text_ParseInt32(const char *text, int32_t *value)
         {
             if (sign < 0)
             {
-                *value = (magnitude == ((int64_t)INT32_MAX + 1LL)) ? INT32_MIN : (int32_t)(-magnitude);
+                *value = (magnitude == APP_TEXT_INT32_MIN_MAGNITUDE) ? INT32_MIN : (int32_t)(-magnitude);
             }
             else
             {

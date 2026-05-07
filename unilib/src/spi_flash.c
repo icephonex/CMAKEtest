@@ -24,6 +24,16 @@
 #define SPI_FLASH_IO_TIMEOUT_MS            100U
 #define SPI_FLASH_BUSY_TIMEOUT_MS          5000U
 #define SPI_FLASH_RX_CHUNK_SIZE            32U
+#define SPI_FLASH_PAGE_OFFSET_MASK         (SPI_FLASH_PAGE_SIZE - 1U)
+#define SPI_FLASH_SECTOR_OFFSET_MASK       (SPI_FLASH_SECTOR_SIZE - 1U)
+
+#if ((SPI_FLASH_PAGE_SIZE & SPI_FLASH_PAGE_OFFSET_MASK) != 0U)
+#error "SPI_FLASH_PAGE_SIZE must be a power of two."
+#endif
+
+#if ((SPI_FLASH_SECTOR_SIZE & SPI_FLASH_SECTOR_OFFSET_MASK) != 0U)
+#error "SPI_FLASH_SECTOR_SIZE must be a power of two."
+#endif
 
 static SPI_HandleTypeDef *s_spi_flash_hspi;
 static SPI_Flash_JedecId s_spi_flash_jedec_id;
@@ -361,7 +371,7 @@ int spi_flash_program(uint32_t address, const void *buffer, uint32_t size)
             uint16_t page_offset;
             uint16_t chunk;
 
-            page_offset = (uint16_t)(address % SPI_FLASH_PAGE_SIZE);
+            page_offset = (uint16_t)(address & (uint32_t)SPI_FLASH_PAGE_OFFSET_MASK);
             chunk = (uint16_t)(SPI_FLASH_PAGE_SIZE - page_offset);
             if (chunk > size)
             {
@@ -399,7 +409,8 @@ int spi_flash_erase(uint32_t address, uint32_t size)
     if ((spi_flash_is_ready() != APP_FALSE) && (size > 0U) &&
         (spi_flash_is_range_valid(address, size) != APP_FALSE))
     {
-        if (((address % SPI_FLASH_SECTOR_SIZE) == 0U) && ((size % SPI_FLASH_SECTOR_SIZE) == 0U))
+        if (((address & (uint32_t)SPI_FLASH_SECTOR_OFFSET_MASK) == 0U) &&
+            ((size & (uint32_t)SPI_FLASH_SECTOR_OFFSET_MASK) == 0U))
         {
             result = 0;
             while ((size > 0U) && (result == 0))
